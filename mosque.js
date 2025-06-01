@@ -1,4 +1,4 @@
-// Function to find nearest mosques using Overpass API
+// Finds nearest mosques using OpenStreetMap (OSM) Overpass API
 async function findNearestMosquesOSM() {
     const mosqueList = document.getElementById('mosque-list');
     const messageDiv = document.getElementById('message');
@@ -11,11 +11,12 @@ async function findNearestMosquesOSM() {
     }
 
     try {
+        // Get user's current position
         const position = await new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
                 enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
+                timeout: 10000, // 10 seconds
+                maximumAge: 0 // Force fresh location
             });
         });
 
@@ -24,9 +25,8 @@ async function findNearestMosquesOSM() {
             lng: position.coords.longitude,
         };
 
-        // Overpass API query to find mosques (amenity=place_of_worship, religion=muslim)
-        // Searches within a 5km radius (5000 meters)
-        const radius = 5000;
+        // Overpass API query for mosques (amenity=place_of_worship, religion=muslim) within a 5km radius.
+        const radius = 5000; // meters
         const overpassQuery = `
             [out:json][timeout:25];
             (
@@ -50,15 +50,16 @@ async function findNearestMosquesOSM() {
 
         const data = await response.json();
 
-        mosqueList.innerHTML = ''; // Clear loading or previous error messages
+        mosqueList.innerHTML = ''; // Clear loading/error messages
 
         if (data.elements && data.elements.length > 0) {
             let mosquesWithDistance = [];
             data.elements.forEach(place => {
+                // Ensure the place has a name and location data to be useful
                 if (place.tags && (place.tags.name || place.tags.name_en)) {
                     const placeLat = place.lat || (place.center && place.center.lat);
                     const placeLon = place.lon || (place.center && place.center.lon);
-                    let distance = Infinity; // Default to infinity if location is missing
+                    let distance = Infinity; 
                     if (userLocation && placeLat && placeLon) {
                         distance = calculateDistance(
                             userLocation.lat,
@@ -72,16 +73,15 @@ async function findNearestMosquesOSM() {
             });
 
             if (mosquesWithDistance.length === 0) {
-                 messageDiv.textContent = 'No mosques with names found nearby. OpenStreetMap data might be incomplete in this area.';
+                 messageDiv.textContent = 'No mosques with identifiable names found nearby. OpenStreetMap data might be incomplete here.';
                  messageDiv.style.display = 'block';
                  return;
             }
 
-            // Sort mosques by distance (ascending)
-            mosquesWithDistance.sort((a, b) => a.distance - b.distance);
+            mosquesWithDistance.sort((a, b) => a.distance - b.distance); // Sort by distance
 
             mosquesWithDistance.forEach(place => {
-                createMosqueListItemOSM(place, userLocation); // createMosqueListItemOSM will use the pre-calculated distance if available
+                createMosqueListItemOSM(place, userLocation);
             });
 
         } else {
@@ -92,25 +92,25 @@ async function findNearestMosquesOSM() {
     } catch (error) {
         console.error('Error getting location or finding mosques (OSM):', error);
         let errorMessage = 'Error finding mosques. ';
-        if (error.message.includes('Geolocation')) { // Check if error is from geolocation
+        if (error.message.includes('Geolocation')) {
              if (error.code === 1) { // PERMISSION_DENIED
-                errorMessage += 'Please allow location access.';
+                errorMessage += 'Please enable location access.';
             } else if (error.code === 2) { // POSITION_UNAVAILABLE
-                errorMessage += 'Location information is unavailable.';
+                errorMessage += 'Current location is unavailable.';
             } else if (error.code === 3) { // TIMEOUT
-                errorMessage += 'Getting location timed out.';
+                errorMessage += 'Getting location timed out. Check connection or signal.';
             }
         } else if (error.message.includes('Overpass API')){
-            errorMessage += 'Could not fetch data from OpenStreetMap.';
+            errorMessage += 'Could not fetch map data. The service might be temporarily down.';
         }
          else {
-            errorMessage += 'An unexpected error occurred.';
+            errorMessage += 'An unexpected error occurred. Please try again.';
         }
         mosqueList.innerHTML = `<div class="error">${errorMessage}</div>`;
     }
 }
 
-// Function to create a list item for each mosque from OSM data
+// Creates and appends a list item for a mosque from OSM data.
 function createMosqueListItemOSM(place, userLocation) {
     const mosqueList = document.getElementById('mosque-list');
     const mosqueItem = document.createElement('div');
@@ -118,6 +118,7 @@ function createMosqueListItemOSM(place, userLocation) {
 
     const name = place.tags.name || place.tags.name_en || 'Unnamed Mosque';
     let address = '';
+    // Construct address string from available OSM tags
     if (place.tags['addr:street']) address += place.tags['addr:street'];
     if (place.tags['addr:housenumber']) address += ' ' + place.tags['addr:housenumber'];
     if (place.tags['addr:city']) address += (address ? ', ' : '') + place.tags['addr:city'];
@@ -126,7 +127,6 @@ function createMosqueListItemOSM(place, userLocation) {
     const placeLat = place.lat || (place.center && place.center.lat);
     const placeLon = place.lon || (place.center && place.center.lon);
 
-    // Use pre-calculated distance if available from the sorting step, otherwise calculate it.
     let distanceDisplay = 'N/A';
     if (place.distance !== undefined && place.distance !== Infinity) {
         distanceDisplay = place.distance.toFixed(2) + ' km';
@@ -140,6 +140,7 @@ function createMosqueListItemOSM(place, userLocation) {
         distanceDisplay = dist.toFixed(2) + ' km';
     }
 
+    // Link to get directions on OpenStreetMap website
     const directionsUrl = `https://www.openstreetmap.org/directions?from=${userLocation.lat},${userLocation.lng}&to=${placeLat},${placeLon}`;
 
     mosqueItem.innerHTML = `
@@ -154,9 +155,9 @@ function createMosqueListItemOSM(place, userLocation) {
     mosqueList.appendChild(mosqueItem);
 }
 
-// Function to calculate distance between two lat/lng points (Haversine formula) - This function remains the same
+// Calculates distance between two lat/lng points using Haversine formula.
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in kilometers
+    const R = 6371; // Radius of the Earth in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
@@ -164,17 +165,16 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
         Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
         Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return R * c; // Distance in km
 }
 
-// Event listener for DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
-    findNearestMosquesOSM(); // Initialize mosque search
+    findNearestMosquesOSM(); // Initial call to find mosques
 
     const backButton = document.getElementById('back-btn');
     if (backButton) {
         backButton.addEventListener('click', () => {
-            window.location.href = 'popup.html'; 
+            window.location.href = 'popup.html'; // Navigate back to the main popup
         });
     }
 }); 

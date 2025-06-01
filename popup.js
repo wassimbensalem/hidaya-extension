@@ -1,9 +1,9 @@
-// Store settings
+// Global settings object, loaded from storage
 let settings = {
     showAyah: true
 };
 
-// Load settings and location from storage
+// Load settings and preferred location on init
 chrome.storage.local.get(['settings', 'location'], function(result) {
     if (result.settings) {
         settings = result.settings;
@@ -29,7 +29,6 @@ chrome.storage.local.get(['settings', 'location'], function(result) {
     }
 });
 
-// Add event listener for settings checkbox
 const showAyahCheckbox = document.getElementById('show-ayah');
 if (showAyahCheckbox) {
     showAyahCheckbox.addEventListener('change', function() {
@@ -98,12 +97,13 @@ async function getCoordinatesFromCity(city) {
     }
 }
 
+// Calculates and displays the time remaining until the next prayer.
 function updateNextPrayerTimer(prayerTimes) {
     const nextPrayerDiv = document.getElementById('next-prayer');
     if (!nextPrayerDiv || !prayerTimes) return;
 
     const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
+    const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes since midnight
     
     const prayers = [
         { name: 'Fajr', time: prayerTimes.Fajr },
@@ -118,9 +118,9 @@ function updateNextPrayerTimer(prayerTimes) {
     let nextPrayerIsTomorrow = false;
 
     prayers.forEach(prayer => {
-        if (!prayer.time) return; // Skip if time is undefined
+        if (!prayer.time) return; // Skip if prayer time is undefined
         const [hours, minutes] = prayer.time.split(':').map(Number);
-        const prayerTime = hours * 60 + minutes;
+        const prayerTime = hours * 60 + minutes; // Prayer time in minutes since midnight
         let timeDiff = prayerTime - currentTime;
         
         if (timeDiff > 0 && timeDiff < timeUntilNext) {
@@ -130,10 +130,11 @@ function updateNextPrayerTimer(prayerTimes) {
         }
     });
     
-    if (!nextPrayer && prayerTimes.Fajr) { // If all prayers for today passed, check Fajr for tomorrow
+    // If all prayers for today have passed, the next prayer is Fajr of the next day.
+    if (!nextPrayer && prayerTimes.Fajr) { 
         const [fajrHours, fajrMinutes] = prayerTimes.Fajr.split(':').map(Number);
         const fajrTimeTomorrow = fajrHours * 60 + fajrMinutes;
-        timeUntilNext = (24 * 60 - currentTime) + fajrTimeTomorrow; 
+        timeUntilNext = (24 * 60 - currentTime) + fajrTimeTomorrow; // Minutes remaining today + minutes into tomorrow until Fajr
         nextPrayer = prayers.find(p => p.name === 'Fajr');
         nextPrayerIsTomorrow = true;
     }
@@ -153,7 +154,7 @@ function updateNextPrayerTimer(prayerTimes) {
 function updatePrayerTimesDisplay(timings) {
     const prayerTimesDiv = document.getElementById('prayer-times');
     if (!prayerTimesDiv) return;
-    prayerTimesDiv.innerHTML = ''; 
+    prayerTimesDiv.innerHTML = ''; // Clear previous times
     
     const prayersToShow = [
         { name: 'Fajr', time: timings.Fajr },
@@ -165,7 +166,7 @@ function updatePrayerTimesDisplay(timings) {
     ];
 
     prayersToShow.forEach(prayer => {
-        if (!prayer.time) return; // Skip if time is undefined
+        if (!prayer.time) return; 
         const div = document.createElement('div');
         div.className = 'prayer-time';
         div.innerHTML = `
@@ -186,7 +187,7 @@ if (locationButton) {
         if (locationInput) {
             const city = locationInput.value.trim();
             if (city) {
-                chrome.storage.local.set({ location: city });
+                chrome.storage.local.set({ location: city }); // Save manually entered location
                 const coords = await getCoordinatesFromCity(city);
                 if (coords) {
                     const timings = await fetchPrayerTimes(coords.latitude, coords.longitude);
@@ -201,7 +202,8 @@ if (locationButton) {
     });
 }
 
-// Initial load: Attempt to use geolocation if no saved location
+// On initial load, try to use geolocation if no location is saved.
+// Otherwise, the saved location (handled by the top-level .get) is used.
 document.addEventListener('DOMContentLoaded', function() {
     chrome.storage.local.get(['location'], function(result) {
         if (!result.location) {
@@ -209,7 +211,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 navigator.geolocation.getCurrentPosition(
                     async (position) => {
                         const { latitude, longitude } = position.coords;
-                        // Try to get city name from coords to store it
+                        // Attempt to reverse geocode to get city name for user convenience and storage
                         try {
                             const geoResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                             if (geoResponse.ok) {
@@ -229,24 +231,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     (error) => {
                         showError('Could not get your location. Please enter a city name manually.');
-                         // If location is denied, or fails, user must input manually. We don't set a default.
+                        // User must input manually if geolocation fails or is denied.
                         console.warn('Geolocation error:', error.message);
                     },
                     {
-                        enableHighAccuracy: false, // Less battery, usually good enough for city level
-                        timeout: 10000,
-                        maximumAge: 3600000 // Accept cached position for up to 1 hour
+                        enableHighAccuracy: false, // Conserve battery; city-level accuracy is sufficient.
+                        timeout: 10000, // Wait 10 seconds for location.
+                        maximumAge: 3600000 // Accept cached position up to 1 hour old.
                     }
                 );
             } else {
                 showError('Geolocation is not supported. Please enter a city name manually.');
             }
-        } 
-        // If location IS in result, it's already loaded by the top-level .get call
+        }
     });
     
-    // Call the new function to load mosque teaser
-    fetchAndDisplayNearestMosque();
+    fetchAndDisplayNearestMosque(); // Load mosque teaser
 });
 
 // Removed findNearestMosque from here as it was for a different UI (mosque.html has its own JS)
@@ -267,7 +267,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     const quranContentEl = document.getElementById('quran-content');
     const dhikrContentEl = document.getElementById('dhikr-content');
 
-    // --- Prayer Times --- 
     async function loadPrayerTimes() {
         try {
             const { location } = await chrome.storage.local.get('location');
@@ -318,6 +317,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         }
 
+        // If no prayer found for today, it means the next prayer is Fajr tomorrow
         if (!nextPrayerFound) { 
             const fajrTimeStr = timings['Fajr'];
             if (fajrTimeStr) {
@@ -333,7 +333,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const minutes = nextPrayerFound.date.getMinutes();
             const ampm = hours >= 12 ? 'PM' : 'AM';
             hours = hours % 12;
-            hours = hours ? hours : 12; 
+            hours = hours ? hours : 12; // the hour '0' should be '12'
             const minutesStr = minutes < 10 ? '0' + minutes : minutes;
             if(nextPrayerTimeEl) nextPrayerTimeEl.textContent = `${hours}:${minutesStr} ${ampm}`;
             if(nextPrayerNameEl) nextPrayerNameEl.textContent = nextPrayerFound.name + (nextPrayerFound.tomorrow ? ' (Tomorrow)' : '');
@@ -409,6 +409,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
+    // Populates the mosque section with a link to the dedicated mosque finding page.
     function loadMosqueSection() {
         if (!mosqueContentEl) return;
         mosqueContentEl.innerHTML = ''; 
@@ -416,13 +417,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         link.href = 'mosque.html';
         link.className = 'action-link';
         link.textContent = 'Find Nearby Mosques';
+        // Basic styling for the link, consider moving to CSS
         link.style.marginTop = '5px';
         link.style.padding = '10px'; 
         link.style.backgroundColor = '#6c757d'; 
         mosqueContentEl.appendChild(link);
     }
 
-    // Initial Load: Check if elements exist before calling load functions
+    // Initial data loading for different sections of the popup
     if (nextPrayerLabelEl && nextPrayerTimeEl && nextPrayerNameEl) {
         loadPrayerTimes();
     }
@@ -437,7 +439,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 }); 
 
-// ---------- Nearest Mosque Teaser Functionality ----------
+// Fetches and displays information about the nearest mosque.
 async function fetchAndDisplayNearestMosque() {
     const mosqueInfoContentEl = document.getElementById('mosque-info-content');
     if (!mosqueInfoContentEl) return;
@@ -445,19 +447,18 @@ async function fetchAndDisplayNearestMosque() {
     mosqueInfoContentEl.innerHTML = '<p class="loading-text">Finding nearby mosque...</p>';
 
     try {
-        // 1. Get current coordinates
+        // Get current geolocation coordinates
         const position = await new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
                 enableHighAccuracy: false, // City-level accuracy is fine
-                timeout: 10000, // 10 seconds
+                timeout: 10000, 
                 maximumAge: 300000 // Use cached position if < 5 minutes old
             });
         });
         const { latitude, longitude } = position.coords;
 
-        // 2. Fetch mosques from Overpass API (simplified from mosque.js)
-        // Bounding box for search (e.g., ~5km radius, adjust as needed)
-        const radius = 0.05; // Approx 5km in degrees
+        // Fetch mosques from Overpass API
+        const radius = 0.05; // Approx 5km search radius in degrees
         const bbox = [
             latitude - radius,
             longitude - radius,
@@ -465,6 +466,7 @@ async function fetchAndDisplayNearestMosque() {
             longitude + radius
         ].join(',');
 
+        // Query for mosques (places of worship for Muslims) within 5km
         const query = `[out:json][timeout:25];
             (
                 node["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
@@ -480,7 +482,7 @@ async function fetchAndDisplayNearestMosque() {
         const data = await response.json();
 
         if (data.elements && data.elements.length > 0) {
-            // For simplicity, take the first one. Sorting by actual distance can be added.
+            // Display the first mosque found. More sophisticated sorting/selection could be added.
             const firstMosque = data.elements[0];
             const mosqueName = firstMosque.tags?.name || 'Unnamed Mosque';
             let mosqueAddress = 'Address not available';
@@ -491,6 +493,7 @@ async function fetchAndDisplayNearestMosque() {
                     addr['addr:city'], addr['addr:postcode']
                 ].filter(Boolean).join(', ') || 'Address not specified';
             }
+            // Fallback to coordinates if address parts are missing
             if (mosqueAddress === 'Address not specified' && firstMosque.lat && firstMosque.lon){
                  mosqueAddress = `Location: ${firstMosque.lat.toFixed(4)}, ${firstMosque.lon.toFixed(4)}`;
             }
@@ -514,5 +517,4 @@ async function fetchAndDisplayNearestMosque() {
         }
         mosqueInfoContentEl.innerHTML = `<p class="error-text">${errorMessage}</p>`;
     }
-}
-// ---------- End of Nearest Mosque Teaser Functionality ---------- 
+} 

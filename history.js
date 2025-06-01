@@ -4,18 +4,18 @@ function createNotificationItem(notification, isFavorite = false) {
     item.className = 'notification-item';
     item.dataset.id = notification.id;
     
-    // Convert numbers to Arabic numerals
+    // Helper to convert numbers to Eastern Arabic numerals for display
     const arabicNumerals = {
         '0': '٠', '1': '١', '2': '٢', '3': '٣', '4': '٤',
         '5': '٥', '6': '٦', '7': '٧', '8': '٨', '9': '٩'
     };
-    
     const convertToArabicNumerals = (num) => {
         return num.toString().replace(/[0-9]/g, digit => arabicNumerals[digit]);
     };
     
     const ayahNumber = convertToArabicNumerals(notification.content.ayahNumber || '');
     
+    // Construct HTML for the notification item
     let content = `
         <div class="arabic">${notification.content.text || notification.content.arabic || notification.content.message}</div>
         <div class="translation">${notification.content.translation || ''}</div>
@@ -36,19 +36,19 @@ function createNotificationItem(notification, isFavorite = false) {
 // Function to display notifications
 function displayNotifications(notifications, containerId, isFavorite = false) {
     const container = document.getElementById(containerId);
-    container.innerHTML = '';
+    container.innerHTML = ''; // Clear previous content
     
     if (notifications.length === 0) {
         if (containerId === 'history-list') {
             container.innerHTML = `
                 <div class="empty-state">
-                    No notifications found. Non-favorite notifications are cleared daily at midnight.
+                    No notifications found. Non-favorite notifications are cleared daily.
                 </div>
             `;
-        } else {
+        } else { // favorites-list
             container.innerHTML = `
                 <div class="empty-state">
-                    No favorite notifications found. Add some by clicking the "Favorite" button on any notification.
+                    No favorite notifications found. Add some via the "Favorite" button.
                 </div>
             `;
         }
@@ -60,7 +60,7 @@ function displayNotifications(notifications, containerId, isFavorite = false) {
         container.appendChild(item);
     });
     
-    // Add event listeners to buttons
+    // Add event listeners to action buttons within the notification items
     container.querySelectorAll('.action-btn').forEach(button => {
         button.addEventListener('click', async (e) => {
             const action = e.target.dataset.action;
@@ -82,14 +82,12 @@ function displayNotifications(notifications, containerId, isFavorite = false) {
     });
 }
 
-// Function to get notification by ID
+// Retrieves a notification object by its ID from storage (checks both history and favorites)
 function getNotificationById(notificationId) {
     return new Promise((resolve) => {
         chrome.storage.local.get(['notifications', 'favorites'], function(result) {
-            const notifications = result.notifications || [];
-            const favorites = result.favorites || [];
-            const notification = notifications.find(n => n.id === notificationId) || 
-                               favorites.find(f => f.id === notificationId);
+            const allNotifications = (result.notifications || []).concat(result.favorites || []);
+            const notification = allNotifications.find(n => n.id === notificationId);
             resolve(notification);
         });
     });
@@ -98,57 +96,64 @@ function getNotificationById(notificationId) {
 // Function to toggle favorite status
 function toggleFavorite(notificationId) {
     chrome.storage.local.get(['notifications', 'favorites'], function(result) {
-        const notifications = result.notifications || [];
-        const favorites = result.favorites || [];
+        let notifications = result.notifications || [];
+        let favorites = result.favorites || [];
+        let notificationToToggle = favorites.find(f => f.id === notificationId); // Check favorites first
+        let isCurrentlyFavorite = true;
+
+        if (!notificationToToggle) { // If not in favorites, check notifications history
+            notificationToToggle = notifications.find(n => n.id === notificationId);
+            isCurrentlyFavorite = false;
+        }
+
+        if (!notificationToToggle) return; // Should not happen if UI is correct
         
-        const notification = notifications.find(n => n.id === notificationId);
-        if (!notification) return;
-        
-        const isFavorite = favorites.some(f => f.id === notificationId);
-        
-        if (isFavorite) {
-            // Remove from favorites
-            const newFavorites = favorites.filter(f => f.id !== notificationId);
-            chrome.storage.local.set({ favorites: newFavorites });
+        if (isCurrentlyFavorite) {
+            favorites = favorites.filter(f => f.id !== notificationId);
         } else {
-            // Add to favorites
-            chrome.storage.local.set({ favorites: [...favorites, notification] });
+            // Ensure no duplicates if it somehow exists in both (though unlikely with current logic)
+            favorites = favorites.filter(f => f.id !== notificationId);
+            favorites.push(notificationToToggle);
         }
         
-        // Update display
-        loadNotifications();
+        chrome.storage.local.set({ favorites: favorites });
+        loadNotifications(); // Refresh display
     });
 }
 
-// Function to copy notification to clipboard
-function copyToClipboard(item) {
-    const arabic = item.querySelector('.arabic').textContent;
-    const translation = item.querySelector('.translation').textContent;
-    const info = item.querySelector('.info').textContent;
+function copyToClipboard(itemElement) {
+    // Extract content directly from the provided item element
+    const arabic = itemElement.querySelector('.arabic').textContent;
+    const translation = itemElement.querySelector('.translation').textContent;
+    const info = itemElement.querySelector('.info').textContent;
     
-    const text = `${arabic}\n\n${translation}\n\n${info}`;
-    navigator.clipboard.writeText(text);
-    alert('Copied to clipboard!');
+    const textToCopy = `${arabic}\n\n${translation}\n\n${info}`.trim();
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        alert('Copied to clipboard!');
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+        alert('Failed to copy.');
+    });
 }
 
-// Function to delete notification
-function deleteNotification(notificationId, isFavorite) {
+function deleteNotification(notificationId, isCurrentlyInFavoritesList) {
     chrome.storage.local.get(['notifications', 'favorites'], function(result) {
-        const notifications = result.notifications || [];
-        const favorites = result.favorites || [];
+        let notifications = result.notifications || [];
+        let favorites = result.favorites || [];
         
-        if (isFavorite) {
-            // Remove from favorites
-            const newFavorites = favorites.filter(f => f.id !== notificationId);
-            chrome.storage.local.set({ favorites: newFavorites });
-        } else {
-            // Remove from notifications
-            const newNotifications = notifications.filter(n => n.id !== notificationId);
-            chrome.storage.local.set({ notifications: newNotifications });
+        if (isCurrentlyInFavoritesList) {
+            favorites = favorites.filter(f => f.id !== notificationId);
+            // Also remove from main notifications list if it exists there, to ensure consistency
+            notifications = notifications.filter(n => n.id !== notificationId);
+        } else { // Deleting from the history list
+            notifications = notifications.filter(n => n.id !== notificationId);
+            // If it was also a favorite, remove it from favorites too
+            favorites = favorites.filter(f => f.id !== notificationId);
         }
         
-        // Update display
-        loadNotifications();
+        chrome.storage.local.set({ notifications: notifications, favorites: favorites }, () => {
+            loadNotifications(); // Refresh display
+        });
     });
 }
 
@@ -158,7 +163,9 @@ function loadNotifications() {
         const notifications = result.notifications || [];
         const favorites = result.favorites || [];
         
-        displayNotifications(notifications, 'history-list');
+        // Display all non-favorite notifications in the history tab
+        // And favorite notifications in the favorites tab
+        displayNotifications(notifications, 'history-list', false);
         displayNotifications(favorites, 'favorites-list', true);
     });
 }
@@ -170,13 +177,11 @@ function handleTabs() {
     
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            // Remove active class from all tabs and contents
             tabs.forEach(t => t.classList.remove('active'));
             contents.forEach(c => c.classList.remove('active'));
             
-            // Add active class to clicked tab and corresponding content
             tab.classList.add('active');
-            const contentId = tab.dataset.tab;
+            const contentId = tab.dataset.tab; // e.g., "history-list" or "favorites-list"
             document.getElementById(contentId).classList.add('active');
         });
     });
@@ -185,7 +190,7 @@ function handleTabs() {
 // Function to handle back button
 function handleBackButton() {
     document.getElementById('back-btn').addEventListener('click', () => {
-        window.location.href = 'popup.html';
+        window.location.href = 'popup.html'; // Navigate back to main popup
     });
 }
 

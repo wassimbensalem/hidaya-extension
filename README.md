@@ -71,4 +71,7 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ## License (Optional)
 
-Choose a license if you're making it open source, e.g., [MIT](LICENSE.md). (You would need to create this file). 
+Choose a license if you're making it open source, e.g., [MIT](LICENSE.md). (You would need to create this file).
+
+---
+*This extension was developed with the assistance of Cursor and the Gemini 2.5 Pro - Vibe Coding AI pair programmer.* 
