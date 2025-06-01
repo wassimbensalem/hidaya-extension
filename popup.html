@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prayer Times</title>
+    <style>
+        /* Reset and Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 320px; 
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            background-color: #f8f9fa; 
+            color: #343a40; 
+            line-height: 1.6;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px; 
+        }
+
+        h2 { 
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 8px;
+        }
+
+        /* Location Input Section */
+        .location-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .location-input input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .location-input input[type="text"]:focus {
+            border-color: #80bdff;
+            outline: 0;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+
+        .location-input button {
+            padding: 10px 15px;
+            background-color: #007bff; 
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+
+        .location-input button:hover {
+            background-color: #0056b3; 
+        }
+
+        .error-message {
+            color: #dc3545; 
+            font-size: 13px;
+            margin-top: 5px;
+            padding: 8px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+        }
+
+        /* Prayer Times Section */
+        .prayer-times {
+            display: grid;
+            grid-template-columns: 1fr 1fr; 
+            gap: 12px; 
+        }
+
+        .prayer-time {
+            background: #ffffff; 
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e9ecef; 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); 
+        }
+        
+        .prayer-name {
+            font-weight: 600; 
+            color: #495057;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .prayer-time-value {
+            font-size: 16px; 
+            color: #212529;
+        }
+
+        .prayer-time.active { 
+            background-color: #e9f5ff; 
+            border-left: 4px solid #007bff;
+            font-weight: bold;
+        }
+
+        /* Next Prayer Timer */
+        .next-prayer {
+            background: #e9f5ff; 
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 15px;
+            color: #004085; 
+            border: 1px solid #b8daff;
+            margin-top: 15px;
+        }
+        .next-prayer strong { 
+            font-weight: 600;
+        }
+
+        .section { 
+             margin-bottom: 15px; 
+        }
+
+        .setting-item, .checkbox-container { 
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            padding: 8px 0; 
+        }
+        
+        input[type="checkbox"] {
+            width: 18px; 
+            height: 18px;
+            accent-color: #007bff; 
+        }
+
+        /* Link Buttons (History & Mosque) */
+        .link-button, .history-link { 
+            display: block;
+            text-align: center;
+            margin-top: 10px; 
+            padding: 12px 15px; 
+            background-color: #6c757d; 
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+        }
+
+        .link-button:hover, .history-link:hover {
+            background-color: #5a6268; 
+            transform: translateY(-1px); 
+        }
+        
+        .link-button.mosque { 
+             background-color: #28a745; 
+        }
+        .link-button.mosque:hover {
+             background-color: #218838;
+        }
+        
+        .input-group { 
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column; 
+            gap: 5px;
+        }
+        .input-group label {
+            font-size: 13px;
+            color: #495057;
+            font-weight: 500;
+        }
+        .input-group input {
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            color: white;
+            background-color: #007bff; 
+        }
+        .btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+        .btn.secondary { 
+            background-color: #6c757d;
+        }
+        .btn.secondary:hover {
+            background-color: #5a6268;
+        }
+
+        /* Nearest Mosque Teaser Section in Popup */
+        .nearest-mosque-teaser {
+            margin-top: 20px; /* Space above this section */
+            padding: 15px;
+            background-color: #ffffff; /* White card style */
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .nearest-mosque-teaser .section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .nearest-mosque-teaser .section-icon {
+            width: 20px; /* Adjust as needed */
+            height: 20px; /* Adjust as needed */
+            /* background-image: url('images/mosque_icon.png'); SVG preferred */
+            /* background-size: contain; */
+            /* background-repeat: no-repeat; */
+            /* For an actual img tag, just set src in HTML */
+        }
+        .nearest-mosque-teaser .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #495057;
+        }
+        .nearest-mosque-teaser .mosque-details p {
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+        .nearest-mosque-teaser .mosque-details .mosque-name {
+            font-weight: 500;
+            color: #007bff;
+        }
+        .nearest-mosque-teaser .mosque-details .mosque-address {
+            color: #6c757d;
+            font-size: 13px;
+        }
+        .nearest-mosque-teaser .loading-text,
+        .nearest-mosque-teaser .error-text {
+            font-size: 13px;
+            color: #6c757d;
+            text-align: center;
+        }
+        .nearest-mosque-teaser .view-all-link {
+            display: block;
+            text-align: right;
+            font-size: 13px;
+            margin-top: 10px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .nearest-mosque-teaser .view-all-link:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="location-input">
+            <input type="text" id="location-input" placeholder="Enter city name">
+            <button id="location-btn">Set</button> 
+        </div>
+        <div id="error-message" class="error-message" style="display: none;"></div>
+        
+        <div class="section">
+            <h2>Prayer Times</h2> 
+            <div class="prayer-times" id="prayer-times"></div>
+            <div class="next-prayer" id="next-prayer">
+            </div>
+        </div>
+
+        <!-- Nearest Mosque Teaser Section -->
+        <div class="nearest-mosque-teaser" id="nearest-mosque-display">
+            <div class="section-header">
+                <!-- Replace with your actual icon, e.g., <img src="images/mosque_icon.svg" class="section-icon"> -->
+                <span class="section-icon">🕌</span> <!-- Temporary emoji icon -->
+                <h3 class="section-title">Nearest Mosque</h3>
+            </div>
+            <div class="mosque-details" id="mosque-info-content">
+                <p class="loading-text">Finding nearby mosque...</p>
+                <!-- Content will be: <p class="mosque-name">Masjid Al-Rahman</p><p class="mosque-address">123 Elm St</p> -->
+            </div>
+            <a href="mosque.html" class="view-all-link">View all...</a>
+        </div>
+
+        <div class="section">
+            <h2>Settings</h2>
+            <div class="setting-item">
+                <input type="checkbox" id="show-ayah" checked>
+                <label for="show-ayah">Show Ayah/Dua Notifications</label>
+            </div>
+        </div>
+
+        <a href="mosque.html" class="link-button mosque">Find Nearest Mosque</a>
+        <a href="history.html" class="link-button">View Notification History</a> 
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html> 
