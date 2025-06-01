@@ -1,6 +1,6 @@
 # Privacy Policy for Hidaya Chrome Extension
 
-Last Updated: [Date of Last Update - e.g., October 26, 2023]
+Last Updated: June 1, 2025
 
 Thank you for using Hidaya, your Islamic Companion Chrome Extension ("Extension"). This Privacy Policy explains how we handle information in connection with your use of the Extension.
 
@@ -55,4 +55,4 @@ We may update this Privacy Policy from time to time. We will notify you of any c
 
 ## Contact Us
 
-If you have any questions about this Privacy Policy, please contact us at: [Your Email Address or a link to your GitHub issues page for the project] 
+If you have any questions about this Privacy Policy, please contact us at: bswassim@gmail.com 
