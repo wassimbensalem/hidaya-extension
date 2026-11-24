@@ -1,180 +1,139 @@
-// Finds nearest mosques using OpenStreetMap (OSM) Overpass API
 async function findNearestMosquesOSM() {
     const mosqueList = document.getElementById('mosque-list');
     const messageDiv = document.getElementById('message');
-    mosqueList.innerHTML = '<div class="loading">Finding nearby mosques...</div>';
+    mosqueList.innerHTML = '<div class="loading-text">Finding nearby mosques…</div>';
     messageDiv.style.display = 'none';
 
-    if (!navigator.geolocation) {
-        mosqueList.innerHTML = '<div class="error">Geolocation is not supported by your browser.</div>';
+    // Use stored coords (set by popup) first — avoids permission prompts
+    let userLocation;
+    const stored = await new Promise(resolve => chrome.storage.local.get(['coords'], resolve));
+    if (stored.coords?.latitude) {
+        userLocation = { lat: stored.coords.latitude, lng: stored.coords.longitude };
+    } else if (navigator.geolocation) {
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 300000
+                });
+            });
+            userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+            chrome.storage.local.set({ coords: { latitude: userLocation.lat, longitude: userLocation.lng } });
+        } catch (err) {
+            const msg = err.code === 1 ? 'Allow location in Chrome settings, or set your city in the main popup first.' :
+                        err.code === 3 ? 'Location request timed out. Try again.' :
+                        'Could not get your location. Set your city in the main popup first.';
+            mosqueList.innerHTML = `<div class="error-text">${msg}</div>`;
+            return;
+        }
+    } else {
+        mosqueList.innerHTML = '<div class="error-text">Set your city in the main popup first.</div>';
         return;
     }
 
     try {
-        // Get user's current position
-        const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: true,
-                timeout: 10000, // 10 seconds
-                maximumAge: 0 // Force fresh location
-            });
-        });
-
-        const userLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-        };
-
-        // Overpass API query for mosques (amenity=place_of_worship, religion=muslim) within a 5km radius.
-        const radius = 5000; // meters
-        const overpassQuery = `
-            [out:json][timeout:25];
-            (
-                node[amenity=place_of_worship][religion=muslim](around:${radius},${userLocation.lat},${userLocation.lng});
-                way[amenity=place_of_worship][religion=muslim](around:${radius},${userLocation.lat},${userLocation.lng});
-                relation[amenity=place_of_worship][religion=muslim](around:${radius},${userLocation.lat},${userLocation.lng});
-            );
-            out body;
-            >;
-            out skel qt;
-        `;
+        // "out center" is lightweight — returns a single lat/lon for nodes, ways, and relations
+        const query = `[out:json][timeout:20];
+(
+  node["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${userLocation.lat},${userLocation.lng});
+  way["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${userLocation.lat},${userLocation.lng});
+  relation["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${userLocation.lat},${userLocation.lng});
+);
+out center;`;
 
         const response = await fetch('https://overpass-api.de/api/interpreter', {
             method: 'POST',
-            body: overpassQuery
+            body: query
         });
 
-        if (!response.ok) {
-            throw new Error(`Overpass API request failed: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Overpass ${response.status}`);
 
         const data = await response.json();
+        mosqueList.innerHTML = '';
 
-        mosqueList.innerHTML = ''; // Clear loading/error messages
-
-        if (data.elements && data.elements.length > 0) {
-            let mosquesWithDistance = [];
-            data.elements.forEach(place => {
-                // Ensure the place has a name and location data to be useful
-                if (place.tags && (place.tags.name || place.tags.name_en)) {
-                    const placeLat = place.lat || (place.center && place.center.lat);
-                    const placeLon = place.lon || (place.center && place.center.lon);
-                    let distance = Infinity; 
-                    if (userLocation && placeLat && placeLon) {
-                        distance = calculateDistance(
-                            userLocation.lat,
-                            userLocation.lng,
-                            placeLat,
-                            placeLon
-                        );
-                    }
-                    mosquesWithDistance.push({ ...place, distance: distance });
-                }
-            });
-
-            if (mosquesWithDistance.length === 0) {
-                 messageDiv.textContent = 'No mosques with identifiable names found nearby. OpenStreetMap data might be incomplete here.';
-                 messageDiv.style.display = 'block';
-                 return;
-            }
-
-            mosquesWithDistance.sort((a, b) => a.distance - b.distance); // Sort by distance
-
-            mosquesWithDistance.forEach(place => {
-                createMosqueListItemOSM(place, userLocation);
-            });
-
-        } else {
-            messageDiv.textContent = 'No mosques found nearby. OpenStreetMap data might be incomplete in this area.';
-            messageDiv.style.display = 'block';
+        if (!data.elements || data.elements.length === 0) {
+            mosqueList.innerHTML = '<div class="empty-text">No mosques found within 5 km.<br><br>If your location looks wrong, go back and type your city in the main screen.</div>';
+            return;
         }
 
-    } catch (error) {
-        console.error('Error getting location or finding mosques (OSM):', error);
-        let errorMessage = 'Error finding mosques. ';
-        if (error.message.includes('Geolocation')) {
-             if (error.code === 1) { // PERMISSION_DENIED
-                errorMessage += 'Please enable location access.';
-            } else if (error.code === 2) { // POSITION_UNAVAILABLE
-                errorMessage += 'Current location is unavailable.';
-            } else if (error.code === 3) { // TIMEOUT
-                errorMessage += 'Getting location timed out. Check connection or signal.';
-            }
-        } else if (error.message.includes('Overpass API')){
-            errorMessage += 'Could not fetch map data. The service might be temporarily down.';
-        }
-         else {
-            errorMessage += 'An unexpected error occurred. Please try again.';
-        }
-        mosqueList.innerHTML = `<div class="error">${errorMessage}</div>`;
+        // Compute distance for each, sort by nearest
+        const mosques = data.elements
+            .map(el => {
+                const lat = el.lat ?? el.center?.lat;
+                const lon = el.lon ?? el.center?.lon;
+                if (!lat || !lon) return null;
+                const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lon);
+                return { ...el, _lat: lat, _lon: lon, distance };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.distance - b.distance);
+
+        mosques.forEach(place => renderMosqueCard(place, userLocation));
+
+    } catch (err) {
+        console.error('Mosque fetch error:', err);
+        const msg = err.message.includes('504') || err.message.includes('503')
+            ? 'Map service is temporarily busy. Please try again in a moment.'
+            : 'Could not load mosque data. Check your connection.';
+        mosqueList.innerHTML = `<div class="error-text">${msg}</div>`;
     }
 }
 
-// Creates and appends a list item for a mosque from OSM data.
-function createMosqueListItemOSM(place, userLocation) {
+function renderMosqueCard(place, userLocation) {
     const mosqueList = document.getElementById('mosque-list');
-    const mosqueItem = document.createElement('div');
-    mosqueItem.className = 'mosque-item';
+    const tags = place.tags || {};
+    const name = tags.name || tags['name:en'] || tags['name:ar'] || 'Unnamed Mosque';
 
-    const name = place.tags.name || place.tags.name_en || 'Unnamed Mosque';
-    let address = '';
-    // Construct address string from available OSM tags
-    if (place.tags['addr:street']) address += place.tags['addr:street'];
-    if (place.tags['addr:housenumber']) address += ' ' + place.tags['addr:housenumber'];
-    if (place.tags['addr:city']) address += (address ? ', ' : '') + place.tags['addr:city'];
-    if (!address) address = 'Address not available in OSM data';
-    
-    const placeLat = place.lat || (place.center && place.center.lat);
-    const placeLon = place.lon || (place.center && place.center.lon);
+    const addrParts = [
+        tags['addr:housenumber'],
+        tags['addr:street'],
+        tags['addr:city'],
+        tags['addr:postcode']
+    ].filter(Boolean);
+    const address = addrParts.length ? addrParts.join(', ') : null;
 
-    let distanceDisplay = 'N/A';
-    if (place.distance !== undefined && place.distance !== Infinity) {
-        distanceDisplay = place.distance.toFixed(2) + ' km';
-    } else if (userLocation && placeLat && placeLon) { // Fallback if distance wasn't pre-calculated
-        const dist = calculateDistance(
-            userLocation.lat,
-            userLocation.lng,
-            placeLat,
-            placeLon
-        );
-        distanceDisplay = dist.toFixed(2) + ' km';
-    }
+    const distKm = place.distance.toFixed(2);
+    const distLabel = place.distance < 1
+        ? `${Math.round(place.distance * 1000)} m away`
+        : `${distKm} km away`;
 
-    // Link to get directions on OpenStreetMap website
-    const directionsUrl = `https://www.openstreetmap.org/directions?from=${userLocation.lat},${userLocation.lng}&to=${placeLat},${placeLon}`;
+    const directionsUrl = `https://www.openstreetmap.org/directions?from=${userLocation.lat},${userLocation.lng}&to=${place._lat},${place._lon}`;
 
-    mosqueItem.innerHTML = `
-        <div class="mosque-name">${name}</div>
-        <div class="mosque-address">${address}</div>
-        <div class="mosque-distance">Distance: ${distanceDisplay}</div>
-        <div class="mosque-actions">
-            <a href="${directionsUrl}" 
-               target="_blank" class="action-btn directions">Get Directions (OSM)</a>
+    const card = document.createElement('div');
+    card.className = 'mosque-card';
+    card.innerHTML = `
+        <div class="mosque-card-header">
+            <span class="mosque-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V10l9-7 9 7v12"/><path d="M9 22v-5a3 3 0 0 1 6 0v5"/></svg></span>
+            <div class="mosque-card-title">
+                <div class="mosque-card-name">${name}</div>
+                ${address ? `<div class="mosque-card-address">${address}</div>` : ''}
+            </div>
+        </div>
+        <div class="mosque-card-footer">
+            <span class="mosque-card-dist">${distLabel}</span>
+            <a href="${directionsUrl}" target="_blank" class="mosque-card-btn">Directions →</a>
         </div>
     `;
-    mosqueList.appendChild(mosqueItem);
+    mosqueList.appendChild(card);
 }
 
-// Calculates distance between two lat/lng points using Haversine formula.
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    findNearestMosquesOSM(); // Initial call to find mosques
-
-    const backButton = document.getElementById('back-btn');
-    if (backButton) {
-        backButton.addEventListener('click', () => {
-            window.location.href = 'popup.html'; // Navigate back to the main popup
-        });
-    }
-}); 
+    findNearestMosquesOSM();
+    document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = 'popup.html';
+    });
+    document.getElementById('retry-btn')?.addEventListener('click', () => {
+        findNearestMosquesOSM();
+    });
+});

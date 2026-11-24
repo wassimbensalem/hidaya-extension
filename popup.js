@@ -1,28 +1,28 @@
 // Global settings object, loaded from storage
 let settings = {
-    showAyah: true
+    showAyah: true,
+    showDua: true
 };
 
 // Load settings and preferred location on init
 chrome.storage.local.get(['settings', 'location'], function(result) {
     if (result.settings) {
         settings = result.settings;
-        if (document.getElementById('show-ayah')) {
-            document.getElementById('show-ayah').checked = settings.showAyah;
-        }
+        const toggle = document.getElementById('show-ayah');
+        if (toggle) toggle.checked = !!settings.showAyah;
     }
-    
+
     if (result.location) {
         const locationInput = document.getElementById('location-input');
         if (locationInput) {
             locationInput.value = result.location;
             getCoordinatesFromCity(result.location).then(coords => {
                 if (coords) {
+                    chrome.storage.local.set({ coords: { latitude: coords.latitude, longitude: coords.longitude } });
                     fetchPrayerTimes(coords.latitude, coords.longitude).then(timings => {
-                        if (timings) {
-                            updatePrayerTimesDisplay(timings);
-                        }
+                        if (timings) updatePrayerTimesDisplay(timings);
                     });
+                    renderQibla(coords.latitude, coords.longitude);
                 }
             });
         }
@@ -33,18 +33,9 @@ const showAyahCheckbox = document.getElementById('show-ayah');
 if (showAyahCheckbox) {
     showAyahCheckbox.addEventListener('change', function() {
         settings.showAyah = this.checked;
-        saveSettings();
+        settings.showDua  = this.checked;
+        chrome.storage.local.set({ settings });
     });
-}
-
-function saveSettings() {
-    const showAyahCheckbox = document.getElementById('show-ayah');
-    if (showAyahCheckbox) {
-         settings = {
-            showAyah: showAyahCheckbox.checked
-        };
-        chrome.storage.local.set({ settings: settings });
-    }
 }
 
 function showError(message) {
@@ -59,13 +50,9 @@ async function fetchPrayerTimes(latitude, longitude) {
     try {
         const date = new Date().toISOString().split('T')[0];
         const response = await fetch(`https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=2`);
-        if (!response.ok) {
-            throw new Error('Failed to fetch prayer times');
-        }
+        if (!response.ok) throw new Error('Failed to fetch prayer times');
         const data = await response.json();
-        if (!data || !data.data || !data.data.timings) {
-            throw new Error('Invalid prayer times data received from API');
-        }
+        if (!data?.data?.timings) throw new Error('Invalid prayer times data');
         return data.data.timings;
     } catch (error) {
         console.error('Error fetching prayer times:', error);
@@ -77,14 +64,12 @@ async function fetchPrayerTimes(latitude, longitude) {
 async function getCoordinatesFromCity(city) {
     try {
         const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`);
-        if (!response.ok) {
-            throw new Error('Failed to fetch location');
-        }
+        if (!response.ok) throw new Error('Failed to fetch location');
         const data = await response.json();
-        if (data && data.length > 0) {
+        if (data?.length > 0) {
             return {
-                latitude: parseFloat(data[0].lat),
-                longitude: parseFloat(data[0].lon),
+                latitude:     parseFloat(data[0].lat),
+                longitude:    parseFloat(data[0].lon),
                 display_name: data[0].display_name
             };
         }
@@ -97,88 +82,226 @@ async function getCoordinatesFromCity(city) {
     }
 }
 
-// Calculates and displays the time remaining until the next prayer.
-function updateNextPrayerTimer(prayerTimes) {
-    const nextPrayerDiv = document.getElementById('next-prayer');
-    if (!nextPrayerDiv || !prayerTimes) return;
-
-    const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes since midnight
-    
-    const prayers = [
-        { name: 'Fajr', time: prayerTimes.Fajr },
-        { name: 'Dhuhr', time: prayerTimes.Dhuhr },
-        { name: 'Asr', time: prayerTimes.Asr },
-        { name: 'Maghrib', time: prayerTimes.Maghrib },
-        { name: 'Isha', time: prayerTimes.Isha }
-    ];
-    
-    let nextPrayer = null;
-    let timeUntilNext = Infinity;
-    let nextPrayerIsTomorrow = false;
-
-    prayers.forEach(prayer => {
-        if (!prayer.time) return; // Skip if prayer time is undefined
-        const [hours, minutes] = prayer.time.split(':').map(Number);
-        const prayerTime = hours * 60 + minutes; // Prayer time in minutes since midnight
-        let timeDiff = prayerTime - currentTime;
-        
-        if (timeDiff > 0 && timeDiff < timeUntilNext) {
-            timeUntilNext = timeDiff;
-            nextPrayer = prayer;
-            nextPrayerIsTomorrow = false;
-        }
-    });
-    
-    // If all prayers for today have passed, the next prayer is Fajr of the next day.
-    if (!nextPrayer && prayerTimes.Fajr) { 
-        const [fajrHours, fajrMinutes] = prayerTimes.Fajr.split(':').map(Number);
-        const fajrTimeTomorrow = fajrHours * 60 + fajrMinutes;
-        timeUntilNext = (24 * 60 - currentTime) + fajrTimeTomorrow; // Minutes remaining today + minutes into tomorrow until Fajr
-        nextPrayer = prayers.find(p => p.name === 'Fajr');
-        nextPrayerIsTomorrow = true;
-    }
-
-    if (nextPrayer) {
-        const hours = Math.floor(timeUntilNext / 60);
-        const minutes = timeUntilNext % 60;
-        nextPrayerDiv.innerHTML = `
-            <strong>Next Prayer:</strong> ${nextPrayer.name} ${nextPrayerIsTomorrow ? '(Tomorrow)' : ''}<br>
-            In ${hours}h ${minutes}m
-        `;
-    } else {
-        nextPrayerDiv.innerHTML = '<strong>Next Prayer:</strong> Unavailable';
-    }
-}
+// ─── Prayer times display ─────────────────────────────────────────────────────
 
 function updatePrayerTimesDisplay(timings) {
-    const prayerTimesDiv = document.getElementById('prayer-times');
-    if (!prayerTimesDiv) return;
-    prayerTimesDiv.innerHTML = ''; // Clear previous times
-    
+    const grid = document.getElementById('prayer-times');
+    if (!grid) return;
+    grid.innerHTML = '';
+
     const prayersToShow = [
-        { name: 'Fajr', time: timings.Fajr },
-        { name: 'Sunrise', time: timings.Sunrise },
-        { name: 'Dhuhr', time: timings.Dhuhr },
-        { name: 'Asr', time: timings.Asr },
-        { name: 'Maghrib', time: timings.Maghrib },
-        { name: 'Isha', time: timings.Isha }
+        { name: 'Fajr',    time: timings.Fajr    },
+        { name: 'Sunrise', time: timings.Sunrise  },
+        { name: 'Dhuhr',   time: timings.Dhuhr   },
+        { name: 'Asr',     time: timings.Asr     },
+        { name: 'Maghrib', time: timings.Maghrib  },
+        { name: 'Isha',    time: timings.Isha    }
     ];
 
-    prayersToShow.forEach(prayer => {
-        if (!prayer.time) return; 
-        const div = document.createElement('div');
-        div.className = 'prayer-time';
-        div.innerHTML = `
-            <span class="prayer-name">${prayer.name}</span>
-            <span class="prayer-time-value">${prayer.time}</span>
+    // Determine which prayer is currently active (most recent past prayer)
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+    let activePrayer = null;
+    let latestPassedTime = -1;
+
+    prayersToShow.forEach(({ name, time }) => {
+        if (!time) return;
+        const [h, m] = time.split(':').map(Number);
+        const t = h * 60 + m;
+        if (t <= currentTime && t > latestPassedTime) {
+            latestPassedTime = t;
+            activePrayer = name;
+        }
+    });
+
+    prayersToShow.forEach(({ name, time }) => {
+        if (!time) return;
+        const card = document.createElement('div');
+        card.className = 'prayer-card' + (name === activePrayer ? ' active' : '');
+        card.innerHTML = `
+            <span class="prayer-card-name">${name}</span>
+            <span class="prayer-card-time">${time}</span>
         `;
-        prayerTimesDiv.appendChild(div);
+        grid.appendChild(card);
     });
 
     chrome.storage.local.set({ prayerTimes: timings });
     updateNextPrayerTimer(timings);
 }
+
+// ─── Next prayer countdown banner ────────────────────────────────────────────
+
+function updateNextPrayerTimer(prayerTimes) {
+    const banner = document.getElementById('next-prayer');
+    if (!banner || !prayerTimes) return;
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+
+    const prayers = [
+        { name: 'Fajr',    time: prayerTimes.Fajr    },
+        { name: 'Dhuhr',   time: prayerTimes.Dhuhr   },
+        { name: 'Asr',     time: prayerTimes.Asr     },
+        { name: 'Maghrib', time: prayerTimes.Maghrib  },
+        { name: 'Isha',    time: prayerTimes.Isha    }
+    ];
+
+    let nextPrayer = null;
+    let timeUntilNext = Infinity;
+    let nextPrayerIsTomorrow = false;
+
+    prayers.forEach(prayer => {
+        if (!prayer.time) return;
+        const [h, m] = prayer.time.split(':').map(Number);
+        const diff = (h * 60 + m) - currentTime;
+        if (diff > 0 && diff < timeUntilNext) {
+            timeUntilNext = diff;
+            nextPrayer = prayer;
+        }
+    });
+
+    // All prayers passed → next is Fajr tomorrow
+    if (!nextPrayer && prayerTimes.Fajr) {
+        const [fh, fm] = prayerTimes.Fajr.split(':').map(Number);
+        timeUntilNext = (24 * 60 - currentTime) + (fh * 60 + fm);
+        nextPrayer = prayers.find(p => p.name === 'Fajr');
+        nextPrayerIsTomorrow = true;
+    }
+
+    if (nextPrayer) {
+        const h = Math.floor(timeUntilNext / 60);
+        const m = timeUntilNext % 60;
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+            <div class="next-banner-left">
+                <div class="next-banner-label">Next Prayer</div>
+                <div class="next-banner-name">${nextPrayer.name}${nextPrayerIsTomorrow ? ' · Tomorrow' : ''}</div>
+            </div>
+            <div class="next-banner-countdown">${h}h ${m}m</div>
+        `;
+    }
+}
+
+// ─── Location helpers ─────────────────────────────────────────────────────────
+
+async function applyLocation(latitude, longitude) {
+    chrome.storage.local.set({ coords: { latitude, longitude } });
+    try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        if (r.ok) {
+            const d = await r.json();
+            const city = d.address?.city || d.address?.town || d.address?.village || d.address?.state || d.address?.county || d.address?.country;
+            if (city) {
+                chrome.storage.local.set({ location: city });
+                const input = document.getElementById('location-input');
+                if (input) input.value = city;
+            }
+        }
+    } catch (e) { /* non-fatal */ }
+    const timings = await fetchPrayerTimes(latitude, longitude);
+    if (timings) updatePrayerTimesDisplay(timings);
+    renderQibla(latitude, longitude);
+}
+
+async function getLocationViaIP() {
+    // Providers ordered by reliability. Tested live — first two confirmed working.
+    const providers = [
+        async () => {
+            const r = await fetch('https://geolocation-db.com/json/');
+            if (!r.ok) throw new Error(`geolocation-db ${r.status}`);
+            const d = await r.json();
+            if (d.latitude == null || d.longitude == null) throw new Error('geolocation-db: no coords');
+            return { latitude: d.latitude, longitude: d.longitude, city: d.city || null };
+        },
+        async () => {
+            const r = await fetch('https://ip.guide/');
+            if (!r.ok) throw new Error(`ip.guide ${r.status}`);
+            const d = await r.json();
+            if (!d.location?.latitude) throw new Error('ip.guide: no coords');
+            return { latitude: d.location.latitude, longitude: d.location.longitude, city: d.location.city || null };
+        },
+        async () => {
+            const r = await fetch('https://ipwho.is/');
+            if (!r.ok) throw new Error(`ipwho.is ${r.status}`);
+            const d = await r.json();
+            if (!d.success || !d.latitude) throw new Error('ipwho.is: no coords');
+            return { latitude: d.latitude, longitude: d.longitude, city: d.city || null };
+        },
+        async () => {
+            const r = await fetch('https://ipapi.co/json/');
+            if (!r.ok) throw new Error(`ipapi.co ${r.status}`);
+            const d = await r.json();
+            if (!d.latitude || !d.longitude) throw new Error('ipapi.co: no coords');
+            return { latitude: d.latitude, longitude: d.longitude, city: d.city || null };
+        }
+    ];
+
+    for (const provider of providers) {
+        try { return await provider(); } catch (e) { console.warn('IP geo fallback:', e.message); }
+    }
+    throw new Error('All IP geolocation providers failed');
+}
+
+function openLocationCapturePage() {
+    chrome.tabs.create({ url: chrome.runtime.getURL('location-capture.html') });
+}
+
+// ─── GPS button ───────────────────────────────────────────────────────────────
+
+const PIN_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>`;
+const SPIN_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="40 20" stroke-dashoffset="0"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></circle></svg>`;
+
+const gpsButton = document.getElementById('gps-btn');
+if (gpsButton) {
+    gpsButton.addEventListener('click', async function() {
+        gpsButton.innerHTML = SPIN_SVG;
+        gpsButton.disabled = true;
+        const finish = () => { gpsButton.innerHTML = PIN_SVG; gpsButton.disabled = false; };
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    finish();
+                    await applyLocation(pos.coords.latitude, pos.coords.longitude);
+                },
+                async () => {
+                    // Browser GPS denied — try IP, then fall back to location-capture tab
+                    try {
+                        const { latitude, longitude, city } = await getLocationViaIP();
+                        if (city) {
+                            finish();
+                            chrome.storage.local.set({ location: city });
+                            const input = document.getElementById('location-input');
+                            if (input) input.value = city;
+                            await applyLocation(latitude, longitude);
+                            return;
+                        }
+                    } catch (e) { /* IP also failed */ }
+                    // IP gave no city — open the location-capture tab for proper permission
+                    finish();
+                    openLocationCapturePage();
+                },
+                { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+            );
+        } else {
+            try {
+                const { latitude, longitude, city } = await getLocationViaIP();
+                if (city) {
+                    finish();
+                    chrome.storage.local.set({ location: city });
+                    const input = document.getElementById('location-input');
+                    if (input) input.value = city;
+                    await applyLocation(latitude, longitude);
+                    return;
+                }
+            } catch (e) { /* IP failed */ }
+            finish();
+            openLocationCapturePage();
+        }
+    });
+}
+
+// ─── Set location button ──────────────────────────────────────────────────────
 
 const locationButton = document.getElementById('location-btn');
 if (locationButton) {
@@ -187,13 +310,13 @@ if (locationButton) {
         if (locationInput) {
             const city = locationInput.value.trim();
             if (city) {
-                chrome.storage.local.set({ location: city }); // Save manually entered location
+                chrome.storage.local.set({ location: city });
                 const coords = await getCoordinatesFromCity(city);
                 if (coords) {
+                    chrome.storage.local.set({ coords: { latitude: coords.latitude, longitude: coords.longitude } });
                     const timings = await fetchPrayerTimes(coords.latitude, coords.longitude);
-                    if (timings) {
-                        updatePrayerTimesDisplay(timings);
-                    }
+                    if (timings) updatePrayerTimesDisplay(timings);
+                    renderQibla(coords.latitude, coords.longitude);
                 }
             } else {
                 showError('Please enter a city name');
@@ -202,319 +325,204 @@ if (locationButton) {
     });
 }
 
-// On initial load, try to use geolocation if no location is saved.
-// Otherwise, the saved location (handled by the top-level .get) is used.
+// ─── DOMContentLoaded ─────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', function() {
     chrome.storage.local.get(['location'], function(result) {
         if (!result.location) {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        const { latitude, longitude } = position.coords;
-                        // Attempt to reverse geocode to get city name for user convenience and storage
-                        try {
-                            const geoResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                            if (geoResponse.ok) {
-                                const geoData = await geoResponse.json();
-                                if (geoData.address && geoData.address.city) {
-                                    chrome.storage.local.set({ location: geoData.address.city });
-                                    const locationInput = document.getElementById('location-input');
-                                    if(locationInput) locationInput.value = geoData.address.city;
-                                }
-                            }
-                        } catch (e) { console.warn("Could not reverse geocode city from coordinates", e); }
-                        
-                        const timings = await fetchPrayerTimes(latitude, longitude);
-                        if (timings) {
-                            updatePrayerTimesDisplay(timings);
-                        }
-                    },
-                    (error) => {
-                        showError('Could not get your location. Please enter a city name manually.');
-                        // User must input manually if geolocation fails or is denied.
-                        console.warn('Geolocation error:', error.message);
-                    },
-                    {
-                        enableHighAccuracy: false, // Conserve battery; city-level accuracy is sufficient.
-                        timeout: 10000, // Wait 10 seconds for location.
-                        maximumAge: 3600000 // Accept cached position up to 1 hour old.
-                    }
-                );
-            } else {
-                showError('Geolocation is not supported. Please enter a city name manually.');
+            const grid = document.getElementById('prayer-times');
+            if (grid) {
+                grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-2);font-size:12px;padding:12px 0;">Enter your city above to see prayer times</p>';
             }
         }
     });
-    
-    fetchAndDisplayNearestMosque(); // Load mosque teaser
+
+    fetchAndDisplayNearestMosque();
+    initPrayerLog();
+    initQibla();
 });
 
-// Removed findNearestMosque from here as it was for a different UI (mosque.html has its own JS)
-// Removed Quran Stream functionality
+// ─── Prayer Log ───────────────────────────────────────────────────────────────
 
-// It might be good to add some basic CSS for status messages (error, success, loading)
-// e.g., in popup.html's <style> tag or a separate CSS file:
-// .status-message.error { color: red; }
-// .status-message.success { color: green; }
-// .status-message.loading { color: blue; } 
+const PRAYER_LOG_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const todayKey = new Date().toISOString().split('T')[0];
 
-document.addEventListener('DOMContentLoaded', async function () {
-    const nextPrayerLabelEl = document.getElementById('next-prayer-label');
-    const nextPrayerTimeEl = document.getElementById('next-prayer-time');
-    const nextPrayerNameEl = document.getElementById('next-prayer-name');
-    
-    const mosqueContentEl = document.getElementById('mosque-content');
-    const quranContentEl = document.getElementById('quran-content');
-    const dhikrContentEl = document.getElementById('dhikr-content');
+function initPrayerLog() {
+    chrome.storage.local.get({ prayerLog: {}, prayerTimes: null }, ({ prayerLog, prayerTimes }) => {
+        const todayLog = prayerLog[todayKey] || {};
+        renderPrayerLog(todayLog, prayerTimes);
+        renderStreak(prayerLog);
+    });
+}
 
-    async function loadPrayerTimes() {
-        try {
-            const { location } = await chrome.storage.local.get('location');
-            if (!location) {
-                if (nextPrayerNameEl) nextPrayerNameEl.textContent = "Set location first";
-                if (nextPrayerTimeEl) nextPrayerTimeEl.textContent = " "; 
-                return;
-            }
+function renderPrayerLog(todayLog, prayerTimes) {
+    const listEl = document.getElementById('prayer-log-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
 
-            const coords = await getCoordinatesFromCity(location);
-            if (!coords) {
-                if (nextPrayerNameEl) nextPrayerNameEl.textContent = "Location not found";
-                if (nextPrayerTimeEl) nextPrayerTimeEl.textContent = " "; 
-                return;
-            }
+    const CHECK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
-            const date = new Date().toISOString().split('T')[0];
-            const response = await fetch(`https://api.aladhan.com/v1/timings/${date}?latitude=${coords.latitude}&longitude=${coords.longitude}&method=2`);
-            if (!response.ok) throw new Error('Failed to fetch prayer times');
-            const data = await response.json();
-            if (!data || !data.data || !data.data.timings) throw new Error('Invalid prayer times data format');
-            const timings = data.data.timings;
+    PRAYER_LOG_PRAYERS.forEach(prayer => {
+        const logged = !!todayLog[prayer];
+        const time   = prayerTimes ? (prayerTimes[prayer] || '') : '';
 
-            displayNextPrayer(timings);
+        const item = document.createElement('div');
+        item.className = 'log-row' + (logged ? ' logged' : '');
+        item.innerHTML = `
+            <span class="log-name">${prayer}</span>
+            <span class="log-time">${time}</span>
+            <button class="log-btn" data-prayer="${prayer}" aria-label="${logged ? 'Marked' : 'Mark as prayed'}">
+                ${CHECK_SVG}
+            </button>
+        `;
+        listEl.appendChild(item);
+    });
 
-        } catch (error) {
-            console.error('Error loading prayer times:', error);
-            if (nextPrayerNameEl) nextPrayerNameEl.textContent = 'Error loading times';
-            if (nextPrayerTimeEl) nextPrayerTimeEl.textContent = " ";
-        }
-    }
+    listEl.querySelectorAll('.log-btn').forEach(btn => {
+        btn.addEventListener('click', () => togglePrayerLog(btn.dataset.prayer));
+    });
+}
 
-    function displayNextPrayer(timings) {
-        const now = new Date();
-        const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-        let nextPrayerFound = null;
+function togglePrayerLog(prayerName) {
+    chrome.storage.local.get({ prayerLog: {}, prayerTimes: null }, ({ prayerLog, prayerTimes }) => {
+        const todayLog = prayerLog[todayKey] || {};
+        todayLog[prayerName] = !todayLog[prayerName];
+        prayerLog[todayKey]  = todayLog;
 
-        for (const prayerName of prayerOrder) {
-            const prayerTimeStr = timings[prayerName];
-            if (!prayerTimeStr) continue;
-
-            const [hours, minutes] = prayerTimeStr.split(':').map(Number);
-            const prayerDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-
-            if (prayerDate > now) {
-                nextPrayerFound = { name: prayerName, time: prayerTimeStr, date: prayerDate };
-                break;
-            }
+        // Keep only last 60 days
+        const keys = Object.keys(prayerLog).sort();
+        if (keys.length > 60) {
+            keys.slice(0, keys.length - 60).forEach(k => delete prayerLog[k]);
         }
 
-        // If no prayer found for today, it means the next prayer is Fajr tomorrow
-        if (!nextPrayerFound) { 
-            const fajrTimeStr = timings['Fajr'];
-            if (fajrTimeStr) {
-                const [hours, minutes] = fajrTimeStr.split(':').map(Number);
-                const tomorrowFajrDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, hours, minutes);
-                nextPrayerFound = { name: 'Fajr', time: fajrTimeStr, date: tomorrowFajrDate, tomorrow: true };
-            }
-        }
+        chrome.storage.local.set({ prayerLog }, () => {
+            renderPrayerLog(todayLog, prayerTimes);
+            renderStreak(prayerLog);
+        });
+    });
+}
 
-        if (nextPrayerFound) {
-            if(nextPrayerLabelEl) nextPrayerLabelEl.textContent = `NEXT PRAYER: ${nextPrayerFound.name.toUpperCase()}`;
-            let hours = nextPrayerFound.date.getHours();
-            const minutes = nextPrayerFound.date.getMinutes();
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            hours = hours % 12;
-            hours = hours ? hours : 12; // the hour '0' should be '12'
-            const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-            if(nextPrayerTimeEl) nextPrayerTimeEl.textContent = `${hours}:${minutesStr} ${ampm}`;
-            if(nextPrayerNameEl) nextPrayerNameEl.textContent = nextPrayerFound.name + (nextPrayerFound.tomorrow ? ' (Tomorrow)' : '');
-        } else {
-            if(nextPrayerLabelEl) nextPrayerLabelEl.textContent = 'NEXT PRAYER';
-            if(nextPrayerTimeEl) nextPrayerTimeEl.textContent = 'N/A';
-            if(nextPrayerNameEl) nextPrayerNameEl.textContent = 'Unavailable';
-        }
-    }
-    
-    async function getCoordinatesFromCity(city) {
-        try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`);
-            if (!response.ok) throw new Error('Failed to fetch location coordinates');
-            const data = await response.json();
-            if (data && data.length > 0) {
-                return { latitude: parseFloat(data[0].lat), longitude: parseFloat(data[0].lon) };
-            }
-            return null;
-        } catch (error) {
-            console.error('Error getting coordinates:', error);
-            return null;
-        }
+function renderStreak(prayerLog) {
+    const streakBar      = document.getElementById('streak-bar');
+    const streakCountEl  = document.getElementById('streak-count');
+    const streakTodayEl  = document.getElementById('streak-today');
+    if (!streakBar) return;
+
+    const todayLog   = prayerLog[todayKey] || {};
+    const doneToday  = PRAYER_LOG_PRAYERS.filter(p => todayLog[p]).length;
+
+    let streak = 0;
+    const base = new Date();
+    for (let i = 1; i <= 60; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().split('T')[0];
+        const log = prayerLog[key] || {};
+        if (PRAYER_LOG_PRAYERS.every(p => log[p])) streak++;
+        else break;
     }
 
-    async function loadQuranAyah() {
-        if (!quranContentEl) return;
-        quranContentEl.innerHTML = '<div class="loading-text">Loading Ayah...</div>';
-        try {
-            const ayahData = await chrome.runtime.sendMessage({ action: 'fetchRandomAyah' });
-            if (ayahData && (ayahData.text || ayahData.arabic)) {
-                let html = '';
-                if (ayahData.arabic) {
-                     html += `<div class="arabic">${ayahData.arabic}</div>`;
-                }
-                if (ayahData.text) {
-                    html += `<p>${ayahData.text}</p>`;
-                }
-                if (ayahData.surahNameEn && ayahData.ayahNumber) {
-                    html += `<span class="reference">Surah ${ayahData.surahNameEn}, ${ayahData.surahNumber}:${ayahData.ayahNumber}</span>`;
-                }
-                quranContentEl.innerHTML = html;
-            } else {
-                quranContentEl.textContent = 'Could not load Ayah at this time.';
-            }
-        } catch (error) {
-            console.error('Error loading Quran Ayah:', error);
-            quranContentEl.textContent = 'Error loading Ayah.';
-        }
-    }
+    streakBar.style.display = 'flex';
+    streakCountEl.textContent = streak;
+    streakTodayEl.textContent = `${doneToday}/5 today`;
+}
 
-    async function loadDhikr() {
-        if (!dhikrContentEl) return;
-        dhikrContentEl.innerHTML = '<div class="loading-text">Loading Dhikr...</div>';
-        try {
-            const dhikrData = await chrome.runtime.sendMessage({ action: 'fetchRandomDhikr' });
-            if (dhikrData && dhikrData.content) {
-                let html = '';
-                 if(dhikrData.arabic && dhikrData.arabic !== dhikrData.content) { 
-                    html += `<div class="arabic">${dhikrData.arabic}</div>`;
-                 }
-                html += `<p>${dhikrData.content}</p>`;
-                if (dhikrData.reference) {
-                    html += `<span class="reference">${dhikrData.reference}</span>`;
-                }
-                dhikrContentEl.innerHTML = html;
-            } else {
-                dhikrContentEl.textContent = 'Could not load Dhikr at this time.';
-            }
-        } catch (error) {
-            console.error('Error loading Dhikr:', error);
-            dhikrContentEl.textContent = 'Error loading Dhikr.';
-        }
-    }
+// ─── Qibla Direction ──────────────────────────────────────────────────────────
 
-    // Populates the mosque section with a link to the dedicated mosque finding page.
-    function loadMosqueSection() {
-        if (!mosqueContentEl) return;
-        mosqueContentEl.innerHTML = ''; 
-        const link = document.createElement('a');
-        link.href = 'mosque.html';
-        link.className = 'action-link';
-        link.textContent = 'Find Nearby Mosques';
-        // Basic styling for the link, consider moving to CSS
-        link.style.marginTop = '5px';
-        link.style.padding = '10px'; 
-        link.style.backgroundColor = '#6c757d'; 
-        mosqueContentEl.appendChild(link);
-    }
+const KAABA_LAT = 21.4225;
+const KAABA_LON = 39.8262;
 
-    // Initial data loading for different sections of the popup
-    if (nextPrayerLabelEl && nextPrayerTimeEl && nextPrayerNameEl) {
-        loadPrayerTimes();
-    }
-    if (quranContentEl) {
-        loadQuranAyah();
-    }
-    if (dhikrContentEl) {
-        loadDhikr();
-    }
-    if (mosqueContentEl) {
-        loadMosqueSection();
-    }
-}); 
+function calculateQibla(lat, lon) {
+    const lat1 = lat * (Math.PI / 180);
+    const lat2 = KAABA_LAT * (Math.PI / 180);
+    const dLon = (KAABA_LON - lon) * (Math.PI / 180);
+    const y    = Math.sin(dLon) * Math.cos(lat2);
+    const x    = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return Math.round((Math.atan2(y, x) * (180 / Math.PI) + 360) % 360);
+}
 
-// Fetches and displays information about the nearest mosque.
+function bearingToCardinal(bearing) {
+    return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(bearing / 45) % 8];
+}
+
+function renderQibla(lat, lon) {
+    const bearing  = calculateQibla(lat, lon);
+    const cardinal = bearingToCardinal(bearing);
+    const needle   = document.getElementById('qibla-arrow');
+    const info     = document.getElementById('qibla-info');
+    if (needle) needle.style.transform = `rotate(${bearing}deg)`;
+    if (info) {
+        info.innerHTML = `
+            <div class="qibla-deg">${bearing}°</div>
+            <div class="qibla-dir">${cardinal} — toward Mecca</div>
+        `;
+    }
+}
+
+function initQibla() {
+    chrome.storage.local.get(['coords'], ({ coords }) => {
+        if (coords?.latitude) renderQibla(coords.latitude, coords.longitude);
+    });
+}
+
+// ─── Nearest Mosque teaser ────────────────────────────────────────────────────
+
 async function fetchAndDisplayNearestMosque() {
-    const mosqueInfoContentEl = document.getElementById('mosque-info-content');
-    if (!mosqueInfoContentEl) return;
+    const el = document.getElementById('mosque-info-content');
+    if (!el) return;
+    el.innerHTML = '<p class="loading-text">Finding nearby mosque…</p>';
 
-    mosqueInfoContentEl.innerHTML = '<p class="loading-text">Finding nearby mosque...</p>';
+    let latitude, longitude;
+    const stored = await new Promise(resolve => chrome.storage.local.get(['coords'], resolve));
+
+    if (stored.coords?.latitude) {
+        ({ latitude, longitude } = stored.coords);
+    } else {
+        try {
+            const pos = await new Promise((resolve, reject) =>
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: false, timeout: 8000, maximumAge: 300000
+                })
+            );
+            ({ latitude, longitude } = pos.coords);
+            chrome.storage.local.set({ coords: { latitude, longitude } });
+        } catch (geoErr) {
+            const msg = geoErr.code === 1 ? 'Allow location to see nearby mosques.' : 'Location unavailable.';
+            el.innerHTML = `<p class="error-text">${msg}</p>`;
+            return;
+        }
+    }
 
     try {
-        // Get current geolocation coordinates
-        const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: false, // City-level accuracy is fine
-                timeout: 10000, 
-                maximumAge: 300000 // Use cached position if < 5 minutes old
-            });
-        });
-        const { latitude, longitude } = position.coords;
-
-        // Fetch mosques from Overpass API
-        const radius = 0.05; // Approx 5km search radius in degrees
-        const bbox = [
-            latitude - radius,
-            longitude - radius,
-            latitude + radius,
-            longitude + radius
-        ].join(',');
-
-        // Query for mosques (places of worship for Muslims) within 5km
-        const query = `[out:json][timeout:25];
-            (
-                node["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
-                way["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
-                relation["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
-            );
-            out center;`;
-        
-        const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-        if (!response.ok) {
-            throw new Error(`Overpass API error: ${response.status}`);
-        }
+        const query = `[out:json][timeout:15];
+(node["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
+ way["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude});
+ relation["amenity"="place_of_worship"]["religion"="muslim"](around:5000,${latitude},${longitude}););
+out center;`;
+        const response = await fetch(
+            `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`
+        );
+        if (!response.ok) throw new Error(`Overpass ${response.status}`);
         const data = await response.json();
 
-        if (data.elements && data.elements.length > 0) {
-            // Display the first mosque found. More sophisticated sorting/selection could be added.
-            const firstMosque = data.elements[0];
-            const mosqueName = firstMosque.tags?.name || 'Unnamed Mosque';
-            let mosqueAddress = 'Address not available';
-            if (firstMosque.tags) {
-                const addr = firstMosque.tags;
-                mosqueAddress = [
-                    addr['addr:housenumber'], addr['addr:street'],
-                    addr['addr:city'], addr['addr:postcode']
-                ].filter(Boolean).join(', ') || 'Address not specified';
-            }
-            // Fallback to coordinates if address parts are missing
-            if (mosqueAddress === 'Address not specified' && firstMosque.lat && firstMosque.lon){
-                 mosqueAddress = `Location: ${firstMosque.lat.toFixed(4)}, ${firstMosque.lon.toFixed(4)}`;
-            }
-
-            mosqueInfoContentEl.innerHTML = `
-                <p class="mosque-name">${mosqueName}</p>
-                <p class="mosque-address">${mosqueAddress}</p>
+        if (data.elements?.length > 0) {
+            const m = data.elements[0];
+            const name = m.tags?.name || 'Unnamed Mosque';
+            const addrParts = [
+                m.tags?.['addr:housenumber'],
+                m.tags?.['addr:street'],
+                m.tags?.['addr:city']
+            ].filter(Boolean);
+            const address = addrParts.length ? addrParts.join(', ') : null;
+            el.innerHTML = `
+                <p class="mosque-name">${name}</p>
+                ${address ? `<p class="mosque-addr">${address}</p>` : ''}
             `;
-
         } else {
-            mosqueInfoContentEl.innerHTML = '<p class="error-text">No mosques found nearby.</p>';
+            el.innerHTML = '<p class="error-text">No mosques found nearby.</p>';
         }
-
-    } catch (error) {
-        console.error('Error fetching nearest mosque for popup:', error);
-        let errorMessage = 'Could not find nearby mosque.';
-        if (error.message.includes('User denied Geolocation') || error.code === 1) {
-            errorMessage = 'Location access denied.';
-        } else if (error.message.includes('Overpass API error')) {
-            errorMessage = 'Mosque data service error.';
-        }
-        mosqueInfoContentEl.innerHTML = `<p class="error-text">${errorMessage}</p>`;
+    } catch (err) {
+        console.error('Mosque teaser error:', err);
+        el.innerHTML = '<p class="error-text">Could not load mosque data.</p>';
     }
-} 
+}

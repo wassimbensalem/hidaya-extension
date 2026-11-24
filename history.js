@@ -126,14 +126,28 @@ function copyToClipboard(itemElement) {
     const arabic = itemElement.querySelector('.arabic').textContent;
     const translation = itemElement.querySelector('.translation').textContent;
     const info = itemElement.querySelector('.info').textContent;
-    
+
     const textToCopy = `${arabic}\n\n${translation}\n\n${info}`.trim();
     navigator.clipboard.writeText(textToCopy).then(() => {
-        alert('Copied to clipboard!');
+        showToast('Copied to clipboard!');
     }).catch(err => {
         console.error('Failed to copy text: ', err);
-        alert('Failed to copy.');
+        showToast('Failed to copy.');
     });
+}
+
+function showToast(message) {
+    let toast = document.getElementById('copy-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'copy-toast';
+        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#343a40;color:#fff;padding:8px 16px;border-radius:6px;font-size:14px;z-index:9999;opacity:0;transition:opacity 0.2s;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
 }
 
 function deleteNotification(notificationId, isCurrentlyInFavoritesList) {
@@ -173,15 +187,15 @@ function loadNotifications() {
 // Function to handle tab switching
 function handleTabs() {
     const tabs = document.querySelectorAll('.tab');
-    const contents = document.querySelectorAll('.content');
-    
+    const contents = document.querySelectorAll('.tab-content');
+
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             tabs.forEach(t => t.classList.remove('active'));
             contents.forEach(c => c.classList.remove('active'));
-            
+
             tab.classList.add('active');
-            const contentId = tab.dataset.tab; // e.g., "history-list" or "favorites-list"
+            const contentId = tab.dataset.tab; // matches id="history" or id="favorites"
             document.getElementById(contentId).classList.add('active');
         });
     });
@@ -201,67 +215,3 @@ document.addEventListener('DOMContentLoaded', () => {
     loadNotifications();
 });
 
-// Function to create notification card (Removed as it seems to be unused/incomplete)
-/*
-function createNotificationCard(notification) {
-    const card = document.createElement('div');
-    card.className = 'notification-card';
-    
-    const content = document.createElement('div');
-    content.className = 'notification-content';
-    
-    const title = document.createElement('h3');
-    title.textContent = notification.type === 'ayah' ? 'Quran Ayah' : 'Islamic Reminder';
-    
-    const message = document.createElement('p');
-    message.textContent = notification.content.text || notification.content.arabic || notification.content.message;
-    
-    const details = document.createElement('div');
-    details.className = 'notification-details';
-    
-    if (notification.type === 'ayah') {
-        const surahInfo = document.createElement('p');
-        surahInfo.className = 'surah-info';
-        surahInfo.textContent = `سورة ${notification.content.surahName || ''} - ${notification.content.ayahNumber || ''}`;
-        
-        const translation = document.createElement('p');
-        translation.className = 'translation';
-        translation.textContent = notification.content.translation || '';
-        
-        details.appendChild(surahInfo);
-        details.appendChild(translation);
-    }
-    
-    const timestamp = document.createElement('p');
-    timestamp.className = 'timestamp';
-    timestamp.textContent = new Date(notification.timestamp).toLocaleString();
-    
-    const actions = document.createElement('div');
-    actions.className = 'notification-actions';
-    
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-btn';
-    copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
-    copyBtn.onclick = () => copyToClipboard(notification);
-    
-    const favoriteBtn = document.createElement('button');
-    favoriteBtn.className = 'favorite-btn';
-    favoriteBtn.innerHTML = isFavorite(notification.id) ? 
-        '<i class="fas fa-heart"></i> Remove from Favorites' : 
-        '<i class="far fa-heart"></i> Add to Favorites';
-    favoriteBtn.onclick = () => toggleFavorite(notification);
-    
-    actions.appendChild(copyBtn);
-    actions.appendChild(favoriteBtn);
-    
-    content.appendChild(title);
-    content.appendChild(message);
-    content.appendChild(details);
-    content.appendChild(timestamp);
-    content.appendChild(actions);
-    
-    card.appendChild(content);
-    
-    return card;
-}
-*/ 

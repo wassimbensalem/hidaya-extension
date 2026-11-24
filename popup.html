@@ -3,322 +3,611 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prayer Times</title>
+    <title>Hidaya</title>
     <style>
-        /* Reset and Base Styles */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary:        #1b6b3a;
+            --primary-dark:   #14532d;
+            --primary-light:  #f0fdf4;
+            --primary-mid:    #dcfce7;
+            --primary-border: #86efac;
+            --accent:         #c8954a;
+            --bg:             #f5f4f0;
+            --card:           #ffffff;
+            --border:         #e4e4e0;
+            --text:           #111827;
+            --text-2:         #6b7280;
+            --text-3:         #9ca3af;
+            --green:          #16a34a;
+            --danger:         #dc2626;
+            --radius:         10px;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            width: 320px; 
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-            background-color: #f8f9fa; 
-            color: #343a40; 
-            line-height: 1.6;
+            width: 380px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
         }
 
-        .container {
+        /* ── Header ────────────────────────────────────── */
+        .header {
+            background: var(--primary-dark);
+            padding: 16px 16px 14px;
+            color: white;
+        }
+
+        .header-top {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .app-name {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            color: #fff;
+        }
+
+        .app-name-ar {
+            font-family: 'Amiri', 'Noto Naskh Arabic', 'Traditional Arabic', 'Arial Unicode MS', serif;
+            font-size: 17px;
+            color: #86efac;
+            opacity: 0.95;
+        }
+
+        .location-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .city-input {
+            flex: 1;
+            padding: 8px 11px;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 7px;
+            font-size: 13px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .city-input::placeholder { color: rgba(255,255,255,0.45); }
+        .city-input:focus {
+            border-color: rgba(255,255,255,0.55);
+            background: rgba(255,255,255,0.16);
+        }
+
+        .hdr-btn {
+            padding: 0 10px;
+            height: 36px;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 7px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .hdr-btn:hover { background: rgba(255,255,255,0.2); }
+        .hdr-btn.icon-btn { padding: 0 9px; }
+
+        /* ── Error banner ──────────────────────────────── */
+        #error-message {
+            margin: 8px 16px 0;
+            padding: 8px 12px;
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            border-radius: 7px;
+            font-size: 12px;
+        }
+
+        /* ── Content wrapper ───────────────────────────── */
+        .content {
+            padding: 14px 16px;
             display: flex;
             flex-direction: column;
-            gap: 20px; 
+            gap: 16px;
         }
 
-        h2 { 
-            font-size: 18px;
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 12px;
-            border-bottom: 1px solid #dee2e6;
-            padding-bottom: 8px;
+        .section-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.9px;
+            text-transform: uppercase;
+            color: var(--text-3);
+            margin-bottom: 8px;
         }
 
-        /* Location Input Section */
-        .location-input {
-            display: flex;
-            gap: 10px;
-            align-items: center;
+        /* ── Skeleton ──────────────────────────────────── */
+        @keyframes shimmer {
+            0%   { background-position: -400px 0; }
+            100% { background-position: 400px 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, #ebebeb 25%, #d8d8d8 50%, #ebebeb 75%);
+            background-size: 400px 100%;
+            animation: shimmer 1.5s infinite linear;
+            border-radius: 8px;
         }
 
-        .location-input input[type="text"] {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ced4da;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .location-input input[type="text"]:focus {
-            border-color: #80bdff;
-            outline: 0;
-            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-        }
-
-        .location-input button {
-            padding: 10px 15px;
-            background-color: #007bff; 
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: background-color 0.2s ease;
-        }
-
-        .location-input button:hover {
-            background-color: #0056b3; 
-        }
-
-        .error-message {
-            color: #dc3545; 
-            font-size: 13px;
-            margin-top: 5px;
-            padding: 8px;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            border-radius: 4px;
-        }
-
-        /* Prayer Times Section */
-        .prayer-times {
+        /* ── Prayer times grid ─────────────────────────── */
+        .prayer-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr; 
-            gap: 12px; 
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
         }
 
-        .prayer-time {
-            background: #ffffff; 
-            padding: 12px;
+        .prayer-card {
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 8px;
+            padding: 10px 8px;
             text-align: center;
-            border: 1px solid #e9ecef; 
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); 
+            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
         }
-        
-        .prayer-name {
-            font-weight: 600; 
-            color: #495057;
+
+        .prayer-card.active {
+            background: var(--primary-light);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 1px var(--primary);
+        }
+
+        .prayer-card-name {
             display: block;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-2);
             margin-bottom: 4px;
+        }
+        .prayer-card.active .prayer-card-name { color: var(--primary); }
+
+        .prayer-card-time {
             font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.3px;
         }
 
-        .prayer-time-value {
-            font-size: 16px; 
-            color: #212529;
-        }
-
-        .prayer-time.active { 
-            background-color: #e9f5ff; 
-            border-left: 4px solid #007bff;
-            font-weight: bold;
-        }
-
-        /* Next Prayer Timer */
-        .next-prayer {
-            background: #e9f5ff; 
-            padding: 15px;
+        /* ── Next prayer banner ────────────────────────── */
+        .next-banner {
+            margin-top: 7px;
+            background: var(--primary-light);
+            border: 1px solid var(--primary-border);
             border-radius: 8px;
-            text-align: center;
-            font-size: 15px;
-            color: #004085; 
-            border: 1px solid #b8daff;
-            margin-top: 15px;
-        }
-        .next-prayer strong { 
-            font-weight: 600;
-        }
-
-        .section { 
-             margin-bottom: 15px; 
-        }
-
-        .setting-item, .checkbox-container { 
+            padding: 11px 14px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 14px;
-            padding: 8px 0; 
-        }
-        
-        input[type="checkbox"] {
-            width: 18px; 
-            height: 18px;
-            accent-color: #007bff; 
+            justify-content: space-between;
         }
 
-        /* Link Buttons (History & Mosque) */
-        .link-button, .history-link { 
-            display: block;
-            text-align: center;
-            margin-top: 10px; 
-            padding: 12px 15px; 
-            background-color: #6c757d; 
-            color: white;
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            transition: background-color 0.2s ease, transform 0.1s ease;
+        .next-banner-left {}
+        .next-banner-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--primary);
+            opacity: 0.8;
+        }
+        .next-banner-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text);
+            margin-top: 1px;
+        }
+        .next-banner-countdown {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--primary);
+            letter-spacing: -0.5px;
         }
 
-        .link-button:hover, .history-link:hover {
-            background-color: #5a6268; 
-            transform: translateY(-1px); 
-        }
-        
-        .link-button.mosque { 
-             background-color: #28a745; 
-        }
-        .link-button.mosque:hover {
-             background-color: #218838;
-        }
-        
-        .input-group { 
-            margin-bottom: 10px;
+        /* ── Prayer log ────────────────────────────────── */
+        .log-list {
             display: flex;
-            flex-direction: column; 
+            flex-direction: column;
             gap: 5px;
         }
-        .input-group label {
-            font-size: 13px;
-            color: #495057;
-            font-weight: 500;
-        }
-        .input-group input {
-            padding: 8px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            font-size: 14px;
-        }
 
-        .btn {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: background-color 0.2s ease, transform 0.1s ease;
-            color: white;
-            background-color: #007bff; 
-        }
-        .btn:hover {
-            background-color: #0056b3;
-            transform: translateY(-1px);
-        }
-        .btn.secondary { 
-            background-color: #6c757d;
-        }
-        .btn.secondary:hover {
-            background-color: #5a6268;
-        }
-
-        /* Nearest Mosque Teaser Section in Popup */
-        .nearest-mosque-teaser {
-            margin-top: 20px; /* Space above this section */
-            padding: 15px;
-            background-color: #ffffff; /* White card style */
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .nearest-mosque-teaser .section-header {
+        .log-row {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-        .nearest-mosque-teaser .section-icon {
-            width: 20px; /* Adjust as needed */
-            height: 20px; /* Adjust as needed */
-            /* background-image: url('images/mosque_icon.png'); SVG preferred */
-            /* background-size: contain; */
-            /* background-repeat: no-repeat; */
-            /* For an actual img tag, just set src in HTML */
-        }
-        .nearest-mosque-teaser .section-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #495057;
-        }
-        .nearest-mosque-teaser .mosque-details p {
-            margin-bottom: 4px;
-            font-size: 14px;
-        }
-        .nearest-mosque-teaser .mosque-details .mosque-name {
-            font-weight: 500;
-            color: #007bff;
-        }
-        .nearest-mosque-teaser .mosque-details .mosque-address {
-            color: #6c757d;
-            font-size: 13px;
-        }
-        .nearest-mosque-teaser .loading-text,
-        .nearest-mosque-teaser .error-text {
-            font-size: 13px;
-            color: #6c757d;
-            text-align: center;
-        }
-        .nearest-mosque-teaser .view-all-link {
-            display: block;
-            text-align: right;
-            font-size: 13px;
-            margin-top: 10px;
-            color: #007bff;
-            text-decoration: none;
-        }
-        .nearest-mosque-teaser .view-all-link:hover {
-            text-decoration: underline;
+            gap: 10px;
+            padding: 9px 12px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            transition: background 0.15s, border-color 0.15s;
         }
 
+        .log-row.logged {
+            background: var(--primary-light);
+            border-color: var(--primary-border);
+        }
+
+        .log-name {
+            font-weight: 600;
+            font-size: 13px;
+            width: 58px;
+            flex-shrink: 0;
+        }
+
+        .log-time {
+            font-size: 12px;
+            color: var(--text-2);
+            flex: 1;
+        }
+
+        .log-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .log-btn:hover { border-color: var(--green); }
+        .log-btn svg { stroke: var(--text-3); transition: stroke 0.15s; }
+        .log-btn:hover svg { stroke: var(--green); }
+
+        .log-row.logged .log-btn {
+            background: var(--green);
+            border-color: var(--green);
+        }
+        .log-row.logged .log-btn svg { stroke: white; }
+
+        .streak-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 6px;
+            padding: 9px 12px;
+            background: #fff8f0;
+            border: 1px solid #fed7aa;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .streak-val { font-weight: 700; color: #c2410c; }
+        .streak-today { font-size: 12px; color: var(--text-2); }
+
+        /* ── Qibla ─────────────────────────────────────── */
+        .qibla-widget {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .compass-ring {
+            width: 74px;
+            height: 74px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: var(--bg);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .compass-label {
+            position: absolute;
+            font-size: 8px;
+            font-weight: 800;
+            line-height: 1;
+            color: var(--text-2);
+        }
+        .compass-label.n { top: 3px; left: 50%; transform: translateX(-50%); color: var(--danger); }
+        .compass-label.s { bottom: 3px; left: 50%; transform: translateX(-50%); }
+        .compass-label.e { right: 3px; top: 50%; transform: translateY(-50%); }
+        .compass-label.w { left: 3px; top: 50%; transform: translateY(-50%); }
+
+        .qibla-needle {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 3px;
+            height: 27px;
+            margin-left: -1.5px;
+            margin-top: -25px;
+            transform-origin: center bottom;
+            background: var(--primary);
+            border-radius: 2px 2px 0 0;
+            transition: transform 0.5s ease;
+        }
+        .qibla-needle::before {
+            content: '';
+            position: absolute;
+            top: -6px; left: -3.5px;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-bottom: 8px solid var(--primary);
+        }
+
+        .compass-center {
+            position: absolute;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--border);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .qibla-info { flex: 1; }
+
+        .qibla-deg {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--primary);
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+
+        .qibla-dir {
+            font-size: 12px;
+            color: var(--text-2);
+            margin-top: 3px;
+        }
+
+        .qibla-waiting {
+            font-size: 12px;
+            color: var(--text-2);
+            font-style: italic;
+        }
+
+        /* ── Mosque teaser ──────────────────────────────── */
+        .mosque-teaser {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+        }
+
+        .teaser-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .teaser-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--text-3);
+        }
+
+        .mosque-name  { font-weight: 600; font-size: 13px; color: var(--primary); margin-bottom: 2px; }
+        .mosque-addr  { font-size: 12px; color: var(--text-2); }
+        .loading-text { font-size: 12px; color: var(--text-2); font-style: italic; }
+        .error-text   { font-size: 12px; color: #b91c1c; }
+
+        .view-all {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .view-all:hover { text-decoration: underline; }
+
+        /* ── Settings toggle ─────────────────────────────── */
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: var(--border);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-thumb {
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 16px; height: 16px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+            pointer-events: none;
+        }
+        .toggle input:checked ~ .toggle-track { background: var(--primary); }
+        .toggle input:checked ~ .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+        /* ── Footer ──────────────────────────────────────── */
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .footer-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            padding: 11px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .footer-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+        .footer-btn.green { background: var(--primary); color: white; }
+        .footer-btn.light { background: var(--card); color: var(--text); border: 1px solid var(--border); }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="location-input">
-            <input type="text" id="location-input" placeholder="Enter city name">
-            <button id="location-btn">Set</button> 
-        </div>
-        <div id="error-message" class="error-message" style="display: none;"></div>
-        
-        <div class="section">
-            <h2>Prayer Times</h2> 
-            <div class="prayer-times" id="prayer-times"></div>
-            <div class="next-prayer" id="next-prayer">
-            </div>
-        </div>
 
-        <!-- Nearest Mosque Teaser Section -->
-        <div class="nearest-mosque-teaser" id="nearest-mosque-display">
-            <div class="section-header">
-                <!-- Replace with your actual icon, e.g., <img src="images/mosque_icon.svg" class="section-icon"> -->
-                <span class="section-icon">🕌</span> <!-- Temporary emoji icon -->
-                <h3 class="section-title">Nearest Mosque</h3>
-            </div>
-            <div class="mosque-details" id="mosque-info-content">
-                <p class="loading-text">Finding nearby mosque...</p>
-                <!-- Content will be: <p class="mosque-name">Masjid Al-Rahman</p><p class="mosque-address">123 Elm St</p> -->
-            </div>
-            <a href="mosque.html" class="view-all-link">View all...</a>
-        </div>
-
-        <div class="section">
-            <h2>Settings</h2>
-            <div class="setting-item">
-                <input type="checkbox" id="show-ayah" checked>
-                <label for="show-ayah">Show Ayah/Dua Notifications</label>
-            </div>
-        </div>
-
-        <a href="mosque.html" class="link-button mosque">Find Nearest Mosque</a>
-        <a href="history.html" class="link-button">View Notification History</a> 
+<div class="header">
+    <div class="header-top">
+        <span class="app-name">Hidaya</span>
+        <span class="app-name-ar">هداية</span>
     </div>
-    <script src="popup.js"></script>
+    <div class="location-row">
+        <input type="text" id="location-input" class="city-input" placeholder="Enter city name…" autocomplete="off">
+        <button id="gps-btn" class="hdr-btn icon-btn" title="Auto-detect location">
+            <!-- Map pin icon -->
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                <circle cx="12" cy="9" r="2.5"/>
+            </svg>
+        </button>
+        <button id="location-btn" class="hdr-btn">Set</button>
+    </div>
+</div>
+
+<div id="error-message" style="display:none;"></div>
+
+<div class="content">
+
+    <!-- Prayer Times -->
+    <div>
+        <div class="section-label">Prayer Times</div>
+        <div class="prayer-grid" id="prayer-times">
+            <div class="skeleton" style="height:58px;"></div>
+            <div class="skeleton" style="height:58px;"></div>
+            <div class="skeleton" style="height:58px;"></div>
+            <div class="skeleton" style="height:58px;"></div>
+            <div class="skeleton" style="height:58px;"></div>
+            <div class="skeleton" style="height:58px;"></div>
+        </div>
+        <div class="next-banner" id="next-prayer" style="display:none;"></div>
+    </div>
+
+    <!-- Today's Log -->
+    <div>
+        <div class="section-label">Today's Log</div>
+        <div class="log-list" id="prayer-log-list"></div>
+        <div class="streak-row" id="streak-bar" style="display:none;">
+            <span>
+                <svg style="display:inline;vertical-align:-2px;margin-right:2px;" width="13" height="13" viewBox="0 0 24 24" fill="#c2410c" stroke="none">
+                    <path d="M12 2C9 7 4 10 4 15a8 8 0 0 0 16 0c0-5-5-8-8-13zm0 17a3 3 0 0 1-3-3c0-2 3-5 3-5s3 3 3 5a3 3 0 0 1-3 3z"/>
+                </svg>
+                Streak: <span class="streak-val" id="streak-count">0</span> days
+            </span>
+            <span class="streak-today" id="streak-today"></span>
+        </div>
+    </div>
+
+    <!-- Qibla Direction -->
+    <div>
+        <div class="section-label">Qibla Direction</div>
+        <div class="qibla-widget">
+            <div class="compass-ring">
+                <span class="compass-label n">N</span>
+                <span class="compass-label s">S</span>
+                <span class="compass-label e">E</span>
+                <span class="compass-label w">W</span>
+                <div class="qibla-needle" id="qibla-arrow"></div>
+                <div class="compass-center"></div>
+            </div>
+            <div id="qibla-info">
+                <p class="qibla-waiting">Waiting for location…</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Nearest Mosque -->
+    <div>
+        <div class="mosque-teaser">
+            <div class="teaser-header">
+                <span class="teaser-title">
+                    <!-- Mosque icon -->
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 22V10l9-7 9 7v12"/><path d="M9 22v-5a3 3 0 0 1 6 0v5"/>
+                    </svg>
+                    Nearest Mosque
+                </span>
+                <a href="mosque.html" class="view-all">View all →</a>
+            </div>
+            <div id="mosque-info-content">
+                <p class="loading-text">Finding nearby mosque…</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings -->
+    <div>
+        <div class="section-label">Settings</div>
+        <div class="setting-row">
+            <span>Ayah &amp; Dua notifications</span>
+            <label class="toggle">
+                <input type="checkbox" id="show-ayah" checked>
+                <div class="toggle-track">
+                    <div class="toggle-thumb"></div>
+                </div>
+            </label>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-grid">
+        <a href="mosque.html" class="footer-btn green">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 22V10l9-7 9 7v12"/><path d="M9 22v-5a3 3 0 0 1 6 0v5"/>
+            </svg>
+            Find Mosque
+        </a>
+        <a href="history.html" class="footer-btn light">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+            </svg>
+            History
+        </a>
+    </div>
+
+</div>
+
+<script src="popup.js"></script>
 </body>
-</html> 
+</html>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hidaya",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Your daily Islamic companion: prayer times, nearest mosque, Quran verses, Dhikr, and timely reminders.",
   "permissions": [
     "storage",
@@ -14,10 +14,14 @@
     "https://api.alquran.cloud/*",
     "https://nominatim.openstreetmap.org/*",
     "https://overpass-api.de/*",
-    "https://dua-dhikr.vercel.app/*"
+    "https://dua-dhikr.vercel.app/*",
+    "https://ipapi.co/*",
+    "https://ipwho.is/*",
+    "https://geolocation-db.com/*",
+    "https://ip.guide/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://api.aladhan.com https://api.alquran.cloud https://nominatim.openstreetmap.org https://overpass-api.de https://dua-dhikr.vercel.app;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://api.aladhan.com https://api.alquran.cloud https://nominatim.openstreetmap.org https://overpass-api.de https://dua-dhikr.vercel.app https://ipapi.co https://ipwho.is https://geolocation-db.com https://ip.guide;"
   },
   "background": {
     "service_worker": "background.js"

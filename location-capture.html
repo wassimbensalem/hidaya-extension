@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Allow Location — Hidaya</title>
+    <style>
+        :root {
+            --primary:       #1b6b3a;
+            --primary-dark:  #14532d;
+            --primary-light: #f0fdf4;
+            --primary-border:#86efac;
+            --bg:            #f5f4f0;
+            --card:          #ffffff;
+            --border:        #e4e4e0;
+            --text:          #111827;
+            --text-2:        #6b7280;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px 36px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+        }
+
+        .icon {
+            width: 64px;
+            height: 64px;
+            background: var(--primary-light);
+            border: 1px solid var(--primary-border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            color: var(--primary);
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 14px;
+            color: var(--text-2);
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        .allow-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .allow-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+        .allow-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+        .status {
+            margin-top: 18px;
+            font-size: 13px;
+            line-height: 1.5;
+            min-height: 20px;
+        }
+        .status.success { color: var(--primary); font-weight: 600; }
+        .status.error   { color: #b91c1c; }
+
+        .app-name {
+            font-size: 13px;
+            color: var(--text-2);
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+        .app-name strong { color: var(--primary); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                <circle cx="12" cy="9" r="2.5"/>
+            </svg>
+        </div>
+
+        <h1>Allow Location Access</h1>
+        <p>Hidaya needs your precise location to show accurate prayer times, Qibla direction, and nearby mosques.</p>
+
+        <button class="allow-btn" id="allow-btn">Allow Location</button>
+        <div class="status" id="status"></div>
+
+        <div class="app-name">
+            <strong>Hidaya</strong> · هداية
+        </div>
+    </div>
+
+    <script src="location-capture.js"></script>
+</body>
+</html>

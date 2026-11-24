@@ -1,3 +1,8 @@
+// Ensure alarms survive service worker restarts (top-level guard)
+chrome.alarms.get('checkPrayerTimes', (alarm) => {
+    if (!alarm) initializeAlarms();
+});
+
 // Islamic quotes and reminders - This array will be removed
 // const islamicQuotes = [ ... ];
 
@@ -65,62 +70,66 @@ function checkPrayerTimes() {
     });
 }
 
-// Function to show random Islamic quote/Dhikr from API (shows notification)
-async function showIslamicQuote() { 
-    try {
-        const response = await fetch('https://dua-dhikr.vercel.app/categories/zikir-pagi-petang', {
-            headers: { 'Accept-Language': 'en' } // Request English translation
-        });
-        if (!response.ok) {
-            console.error(`Failed to fetch Dhikr from API: ${response.status}`);
-            return;
-        }
-        const dhikrArray = await response.json();
+// Shared helper: fetch a random item from a dua-dhikr.vercel.app category.
+// API v2 structure: GET /categories/{slug} → {data:[{id,title,...}]}
+//                   GET /categories/{slug}/{id} → {data:{arabic,translation,...}}
+// The category list is cached for 24 hours to avoid 429 rate-limit errors.
+const DHIKR_LIST_TTL = 24 * 60 * 60 * 1000; // 24 hours in ms
 
-        if (dhikrArray && dhikrArray.length > 0) {
-            const randomDhikr = dhikrArray[Math.floor(Math.random() * dhikrArray.length)];
-            let message = '';
-            if (randomDhikr.arabic) message += randomDhikr.arabic;
-            if (randomDhikr.translation) message += `\n\n${randomDhikr.translation}`;
-            if (randomDhikr.notes) message += `\n\nNotes: ${randomDhikr.notes}`;
-            if (randomDhikr.fawaid) message += `\n\nBenefits: ${randomDhikr.fawaid}`;
-            
-            if (message) {
-                createNotification(randomDhikr.title || 'Islamic Reminder', message.trim());
-            } else {
-                 console.warn('Selected Dhikr from API has no content to display.');
-            }
-        } else {
-            console.warn('Dhikr API (zikir-pagi-petang) returned no items.');
+async function fetchRandomDhikrItem(category) {
+    const headers = { 'Accept-Language': 'en' };
+    const cacheKey = `dhikrList_${category}`;
+    const cacheTs  = `dhikrListTs_${category}`;
+
+    // Use cached list if fresh
+    const stored = await chrome.storage.local.get([cacheKey, cacheTs]);
+    let items = stored[cacheKey];
+    const cachedAt = stored[cacheTs] || 0;
+
+    if (!Array.isArray(items) || items.length === 0 || Date.now() - cachedAt > DHIKR_LIST_TTL) {
+        const listRes = await fetch(`https://dua-dhikr.vercel.app/categories/${category}`, { headers });
+        if (!listRes.ok) throw new Error(`List fetch failed: ${listRes.status}`);
+        const listJson = await listRes.json();
+        items = listJson.data;
+        if (!Array.isArray(items) || items.length === 0) throw new Error('Empty list');
+        await chrome.storage.local.set({ [cacheKey]: items, [cacheTs]: Date.now() });
+    }
+
+    const pick = items[Math.floor(Math.random() * items.length)];
+    const itemRes = await fetch(`https://dua-dhikr.vercel.app/categories/${category}/${pick.id}`, { headers });
+    if (!itemRes.ok) throw new Error(`Item fetch failed: ${itemRes.status}`);
+    const itemJson = await itemRes.json();
+    return itemJson.data;
+}
+
+// Function to show random morning/evening Dhikr notification
+async function showIslamicQuote() {
+    try {
+        // Alternate between morning-dhikr and evening-dhikr
+        const category = Math.random() < 0.5 ? 'morning-dhikr' : 'evening-dhikr';
+        const dhikr = await fetchRandomDhikrItem(category);
+        let message = '';
+        if (dhikr.arabic) message += dhikr.arabic;
+        if (dhikr.translation) message += `\n\n${dhikr.translation}`;
+        if (dhikr.notes) message += `\n\nNotes: ${dhikr.notes}`;
+        if (message) {
+            createNotification(dhikr.title || 'Dhikr Reminder', message.trim());
         }
     } catch (error) {
-        console.error('Error fetching random Dhikr from API:', error);
+        console.error('Error fetching Dhikr:', error);
     }
 }
 
 // Function to get a random dua from API (for notifications)
 async function getRandomDua() {
     try {
-        const response = await fetch('https://dua-dhikr.vercel.app/categories/daily-dua', {
-            headers: { 'Accept-Language': 'en' }
-        });
-        if (!response.ok) {
-            console.error(`Failed to fetch duas from API: ${response.status}`);
-            return null;
-        }
-        const duasArray = await response.json();
-        if (duasArray && duasArray.length > 0) {
-            const randomDua = duasArray[Math.floor(Math.random() * duasArray.length)];
-            return {
-                arabic: randomDua.arabic || '',
-                translation: randomDua.translation || ''
-            };
-        } else {
-            console.warn('Dua API (daily-dua) returned no items.');
-            return null;
-        }
+        const dua = await fetchRandomDhikrItem('daily-dua');
+        return {
+            arabic: dua.arabic || '',
+            translation: dua.translation || ''
+        };
     } catch (error) {
-        console.error('Error fetching random dua from API:', error);
+        console.error('Error fetching random dua:', error);
         return null;
     }
 }
@@ -202,7 +211,7 @@ async function showAyahNotification() {
             const notificationId = `ayah-${Date.now()}`;
             const notificationOptions = {
                 type: 'basic',
-                iconUrl: 'png_icons/icon128.png', // Updated path
+                iconUrl: chrome.runtime.getURL('png_icons/icon128.png'),
                 title: 'Quran Ayah of the Moment',
                 message: ayah.text, 
                 contextMessage: `Surah ${ayah.surahNameEn} (${ayah.surahNumber}:${ayah.ayahNumber})`,
@@ -247,6 +256,7 @@ function initializeAlarms() {
         chrome.alarms.create('randomContentReminder', { periodInMinutes: 120 }); // Ayah/Dua every 2 hours
         chrome.alarms.create('dailyCleanup', { periodInMinutes: 1440, when: getNextMidnight() }); // Daily at midnight
     });
+    updatePrayerBadge(); // Sync badge on startup
 }
 
 // Listen for alarms - MERGED
@@ -254,7 +264,11 @@ chrome.alarms.onAlarm.addListener(function(alarm) {
     if (alarm.name === 'checkPrayerTimes') {
         checkPrayerTimes();
     } else if (alarm.name === 'showIslamicQuote') {
-        showIslamicQuote();
+        chrome.storage.local.get(['settings'], function(result) {
+            if (!result.settings || result.settings.showAyah !== false) {
+                showIslamicQuote();
+            }
+        });
     } else if (alarm.name === 'randomContentReminder') {
         const shouldShowAyah = Math.random() < 0.5; // 50% chance
         if (shouldShowAyah) {
@@ -277,14 +291,9 @@ chrome.alarms.onAlarm.addListener(function(alarm) {
 
 // Handle notification click
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-    if (buttonIndex === 0) { // Assumes "View Details" is always the first button
-        chrome.storage.local.get(['lastAyah'], function(result) {
-            if (result.lastAyah) {
-                // Navigate to a local HTML page with Ayah details
-                chrome.tabs.create({
-                    url: `ayah.html?surah=${result.lastAyah.surahNumber}&ayah=${result.lastAyah.ayahNumber}`
-                });
-            }
+    if (buttonIndex === 0) { // "View Details" button on ayah notifications
+        chrome.tabs.create({
+            url: chrome.runtime.getURL('history.html')
         });
     }
 });
@@ -302,25 +311,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // showIslamicQuote(); // This shows a notification, not what popup wants.
         // For now, returning null or an empty object as a placeholder.
         // Placeholder: You'll need a function that fetches and returns Dhikr data for the popup.
-        async function fetchDhikrForPopup() {
-            try {
-                const response = await fetch('https://dua-dhikr.vercel.app/categories/zikir-pagi-petang', { headers: { 'Accept-Language': 'en' } });
-                if (!response.ok) return null;
-                const dhikrArray = await response.json();
-                if (dhikrArray && dhikrArray.length > 0) {
-                    return dhikrArray[Math.floor(Math.random() * dhikrArray.length)];
-                }
-                return null;
-            } catch (error) {
-                console.error("Error fetching Dhikr for popup:", error);
-                return null;
-            }
-        }
-        fetchDhikrForPopup().then(sendResponse);
+        fetchRandomDhikrItem('morning-dhikr').then(sendResponse).catch(() => sendResponse(null));
         return true; // Indicates asynchronous response
     }
     // Return false for synchronous responses or if action is not handled here.
     return false; 
+});
+
+// Update the extension badge with today's prayer count
+function updatePrayerBadge() {
+    const todayKey = new Date().toISOString().split('T')[0];
+    chrome.storage.local.get({ prayerLog: {} }, ({ prayerLog }) => {
+        const todayLog = prayerLog[todayKey] || {};
+        const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+        const count = prayers.filter(p => todayLog[p]).length;
+        if (count === 0) {
+            chrome.action.setBadgeText({ text: '' });
+        } else {
+            chrome.action.setBadgeText({ text: `${count}/5` });
+            chrome.action.setBadgeBackgroundColor({
+                color: count === 5 ? '#28a745' : '#007bff'
+            });
+        }
+    });
+}
+
+// Keep badge in sync whenever prayer log changes
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.prayerLog) {
+        updatePrayerBadge();
+    }
 });
 
 // On extension install/update - MERGED
